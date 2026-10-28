@@ -13,7 +13,7 @@ judgement.**
 
 ## Try it / run it
 
-- Hosted (deployment URL): [README deployment placeholder — see "Deployment" below]
+- Hosted: **https://site-30e05577ceae43fc916eee53071b8823.freebuff.page** — open this in Chrome on your Android phone
 - Local:
 
 ```bash
@@ -65,10 +65,12 @@ persist in IndexedDB and continue working with no signal.
 
 ## Deployment
 
-The production PWA build is deployed to a public HTTPS URL so it can be
-installed on an Android phone directly from Chrome. Currently served at:
+The production PWA build is deployed to a public HTTPS URL (`dist/` is served
+by a Workers asset handler — see [`deploy/worker.js`](deploy/worker.js) and
+[`manifest.json`](manifest.json)) so it can be installed on an Android phone
+directly from Chrome. Currently served at:
 
-**https://roadlevel-sites-preview.roadlevel.pages.dev**  *(placeholder — replace with your actual deployed URL)*
+**https://site-30e05577ceae43fc916eee53071b8823.freebuff.page**
 
 ## Governing rule
 
