@@ -59,7 +59,21 @@
 * Image pre-processing: canvas rotation (90° increments), contrast enhancement, and grayscaling for faint site handwriting.
 * **Human-in-the-Loop Safety:** Extracted values are marked *Pending Review* with uncertain digits highlighted in amber. Readings must be human-confirmed before being accepted into calculations.
 
-### 6. Reports, Multi-Sheet Excel & Audit Trail (Sections 5.3 & 14)
+### 6. Fast Field Entry & Site Keyboard Navigation
+* **Spreadsheet-Speed Entry:** Keyboard navigation allows entering an entire run without ever touching the mouse. Pressing **Enter** in the IS or BS column automatically advances focus straight down to the same column in the next row, and automatically inserts a new row when reaching the bottom.
+* **Cross-Section Offsets & Intervals:** Dedicated **Offset (m)** column with a single-click **"+ Cross-Section (-4.5 to +4.5)"** button that pre-populates the standard road carriageway stations (`-4.5 m`, `-3.0 m`, `0.0 m (CL)`, `+3.0 m`, `+4.5 m`).
+* **Reading Unit Toggle:** Instant switch between Metres (`m`, e.g. `2.033`) and integer millimetres (`mm`, e.g. `2033`).
+
+### 7. Triple-Theme Display Engine
+* **🌙 Dark Mode:** Low-glare, high-contrast engineering dark palette for evening field-camp calculations, night shifts, and battery saving.
+* **☀️ Light Mode:** Clean, professional civil engineering CAD aesthetic.
+* **⚡ High-Contrast Sunlight Mode:** Vivid amber/black palette engineered specifically for outdoor visibility under blinding tropical sunlight.
+
+### 8. Built-in Surveyor Quick Field Guide
+* Accessible anytime via the **"Field Guide"** button in the header.
+* Explains Benchmark setups, change points, cross-sections, peg calculations (+300 mm allowance), and road dipping in clear, non-technical plain English with visual step-by-step illustrations.
+
+### 9. Reports, Multi-Sheet Excel & Audit Trail (Sections 5.3 & 14)
 * **Multi-Sheet Excel Workbook Export (`.xlsx`):**
   1. `Project Summary`
   2. `Field Book`

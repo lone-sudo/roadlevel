@@ -6,12 +6,10 @@ import {
   Download,
   Clipboard,
   CheckCircle2,
-  AlertTriangle,
   RotateCw,
   X,
   Sparkles,
-  ArrowDown,
-  Info,
+  HelpCircle,
 } from 'lucide-react';
 import { FieldBookObservation, ProjectSettings, ArithmeticCheckResult } from '../../types/survey';
 import {
@@ -27,21 +25,32 @@ interface SurveyBookGridProps {
   arithmeticCheck: ArithmeticCheckResult;
   onSaveObservations: (obs: FieldBookObservation[]) => Promise<void>;
   onExportExcel: () => void;
-  sunlightMode: boolean;
+  theme: 'light' | 'dark' | 'sunlight';
+  onOpenFieldGuide: () => void;
 }
 
 export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
   project,
   observations,
-  arithmeticCheck,
+  arithmeticCheck: _arithmeticCheck,
   onSaveObservations,
   onExportExcel,
-  sunlightMode,
+  theme,
+  onOpenFieldGuide,
 }) => {
+  const isDark = theme === 'dark';
+  const isSunlight = theme === 'sunlight';
   const isIntegerMm = project.unitConvention === 'mm_integer';
+
+  // Benchmark Reference Elevation (Default: 1830.000 m or project default)
+  const [benchmarkRL, setBenchmarkRL] = useState<string>('1830.000');
+  const [readingUnit, setReadingUnit] = useState<'m' | 'mm'>('m'); // Allows typing 2.033 or 2033
 
   // Local grid rows state (for instant zero-lag typing)
   const [gridRows, setGridRows] = useState<FieldBookObservation[]>([]);
+
+  // Focus target after new row insertion
+  const [pendingFocus, setPendingFocus] = useState<{ row: number; col: number } | null>(null);
 
   // Camera / Scan Modal state
   const [showScanModal, setShowScanModal] = useState<boolean>(false);
@@ -54,56 +63,231 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const tableRef = useRef<HTMLTableElement>(null);
+  const inputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
 
   // Sync incoming observations into gridRows
   useEffect(() => {
     if (observations && observations.length > 0) {
       setGridRows(observations);
+      // If row 1 has a known RL, adopt it
+      if (observations[0]?.knownRLM) {
+        setBenchmarkRL(observations[0].knownRLM.toFixed(3));
+      }
     } else {
-      // Initialize with 5 clean blank rows if empty
-      const initialBlankRows: FieldBookObservation[] = Array.from({ length: 5 }, (_, i) => ({
-        id: `row-init-${Date.now()}-${i}`,
-        projectId: project.id,
-        setupId: 'setup-1',
-        setupNumber: 1,
-        pointId: i === 0 ? 'BM-01' : '',
-        pointType: i === 0 ? 'BM' : 'GROUND',
-        chainage: i === 0 ? '0+000' : '',
-        chainageMeters: null,
-        position: 'CL',
-        offsetMeters: 0,
-        backsightM: i === 0 ? 1.25 : null,
-        intermediateSightM: null,
-        foresightM: null,
-        knownRLM: i === 0 ? 100.0 : null,
-        calculatedRL_HI: i === 0 ? 100.0 : null,
-        riseM: null,
-        fallM: null,
-        calculatedRL_RF: i === 0 ? 100.0 : null,
-        designRLM: null,
-        remarks: i === 0 ? 'Benchmark' : '',
-        source: 'manual',
-        isReviewed: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }));
-      setGridRows(initialBlankRows);
+      // Default 6 rows matching user's chainage setup
+      const initialRows: FieldBookObservation[] = [
+        {
+          id: `row-init-1`,
+          projectId: project.id,
+          setupId: 'setup-1',
+          setupNumber: 1,
+          pointId: 'BM-01',
+          pointType: 'BM',
+          chainage: '1+340',
+          chainageMeters: 1340,
+          position: 'CL',
+          offsetMeters: 0,
+          backsightM: 0.323,
+          intermediateSightM: null,
+          foresightM: null,
+          knownRLM: 1830.0,
+          calculatedRL_HI: 1830.0,
+          riseM: null,
+          fallM: null,
+          calculatedRL_RF: 1830.0,
+          designRLM: null,
+          remarks: 'Road Beacon Reference',
+          source: 'manual',
+          isReviewed: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: `row-init-2`,
+          projectId: project.id,
+          setupId: 'setup-1',
+          setupNumber: 1,
+          pointId: '1+360 -4.5',
+          pointType: 'GROUND',
+          chainage: '1+360',
+          chainageMeters: 1360,
+          position: 'L',
+          offsetMeters: -4.5,
+          backsightM: null,
+          intermediateSightM: 2.033,
+          foresightM: null,
+          knownRLM: null,
+          calculatedRL_HI: null,
+          riseM: null,
+          fallM: null,
+          calculatedRL_RF: null,
+          designRLM: null,
+          remarks: 'Left Edge (-4.5m)',
+          source: 'manual',
+          isReviewed: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: `row-init-3`,
+          projectId: project.id,
+          setupId: 'setup-1',
+          setupNumber: 1,
+          pointId: '1+360 -3.0',
+          pointType: 'GROUND',
+          chainage: '1+360',
+          chainageMeters: 1360,
+          position: 'L',
+          offsetMeters: -3.0,
+          backsightM: null,
+          intermediateSightM: 2.007,
+          foresightM: null,
+          knownRLM: null,
+          calculatedRL_HI: null,
+          riseM: null,
+          fallM: null,
+          calculatedRL_RF: null,
+          designRLM: null,
+          remarks: 'Left Lane (-3.0m)',
+          source: 'manual',
+          isReviewed: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: `row-init-4`,
+          projectId: project.id,
+          setupId: 'setup-1',
+          setupNumber: 1,
+          pointId: '1+360 CL',
+          pointType: 'GROUND',
+          chainage: '1+360',
+          chainageMeters: 1360,
+          position: 'CL',
+          offsetMeters: 0.0,
+          backsightM: null,
+          intermediateSightM: 2.008,
+          foresightM: null,
+          knownRLM: null,
+          calculatedRL_HI: null,
+          riseM: null,
+          fallM: null,
+          calculatedRL_RF: null,
+          designRLM: null,
+          remarks: 'Centreline (0.0)',
+          source: 'manual',
+          isReviewed: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: `row-init-5`,
+          projectId: project.id,
+          setupId: 'setup-1',
+          setupNumber: 1,
+          pointId: '1+360 +3.0',
+          pointType: 'GROUND',
+          chainage: '1+360',
+          chainageMeters: 1360,
+          position: 'R',
+          offsetMeters: 3.0,
+          backsightM: null,
+          intermediateSightM: 2.043,
+          foresightM: null,
+          knownRLM: null,
+          calculatedRL_HI: null,
+          riseM: null,
+          fallM: null,
+          calculatedRL_RF: null,
+          designRLM: null,
+          remarks: 'Right Lane (+3.0m)',
+          source: 'manual',
+          isReviewed: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: `row-init-6`,
+          projectId: project.id,
+          setupId: 'setup-1',
+          setupNumber: 1,
+          pointId: '1+360 +4.5',
+          pointType: 'GROUND',
+          chainage: '1+360',
+          chainageMeters: 1360,
+          position: 'R',
+          offsetMeters: 4.5,
+          backsightM: null,
+          intermediateSightM: 2.083,
+          foresightM: null,
+          knownRLM: null,
+          calculatedRL_HI: null,
+          riseM: null,
+          fallM: null,
+          calculatedRL_RF: null,
+          designRLM: null,
+          remarks: 'Right Edge (+4.5m)',
+          source: 'manual',
+          isReviewed: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+      setGridRows(initialRows);
     }
   }, [observations, project.id]);
 
-  // Compute reductions live on gridRows
-  const { calculatedObservations, arithmeticCheck: liveCheck } = React.useMemo(() => {
-    return reduceSurveyLevelBook(gridRows);
-  }, [gridRows]);
+  // Handle focus when row count changes
+  useEffect(() => {
+    if (pendingFocus) {
+      const key = `${pendingFocus.row}-${pendingFocus.col}`;
+      const input = inputRefs.current[key];
+      if (input) {
+        input.focus();
+        input.select();
+        setPendingFocus(null);
+      }
+    }
+  }, [gridRows.length, pendingFocus]);
 
-  // Save changes with debounce
+  // Calculate HI, Rise, Fall, RL in real time
+  const { calculatedObservations, arithmeticCheck: liveCheck } = React.useMemo(() => {
+    // Inject known benchmark elevation into row 0 if row 0 has BS and no known RL
+    const rowsWithBM = gridRows.map((r, i) => {
+      if (i === 0 && (r.backsightM !== null || r.pointType === 'BM')) {
+        const bmVal = parseFloat(benchmarkRL);
+        return {
+          ...r,
+          knownRLM: isNaN(bmVal) ? 1830.0 : bmVal,
+        };
+      }
+      return r;
+    });
+
+    return reduceSurveyLevelBook(rowsWithBM);
+  }, [gridRows, benchmarkRL]);
+
+  // Debounced auto-save
   const debouncedSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const triggerSave = (updatedRows: FieldBookObservation[]) => {
     if (debouncedSaveRef.current) clearTimeout(debouncedSaveRef.current);
     debouncedSaveRef.current = setTimeout(() => {
       onSaveObservations(updatedRows);
     }, 600);
+  };
+
+  // Helper to parse staff reading (handles e.g. 2033 -> 2.033 m or 2.033)
+  const parseStaffInput = (val: string): number | null => {
+    const clean = val.replace(/,/g, '').trim();
+    if (clean === '') return null;
+    const num = parseFloat(clean);
+    if (isNaN(num)) return null;
+
+    // If reading is typed as integer > 50 (like 2033 or 323), convert mm to m
+    if (readingUnit === 'mm' || (!clean.includes('.') && num >= 50)) {
+      return Number((num / 1000).toFixed(4));
+    }
+    return num;
   };
 
   // Cell change handler
@@ -115,10 +299,11 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
     const updated = [...gridRows];
     const row = { ...updated[index] };
 
-    if (field === 'backsightM' || field === 'intermediateSightM' || field === 'foresightM' || field === 'knownRLM') {
-      const clean = value.replace(/,/g, '').trim();
-      const num = clean === '' ? null : parseFloat(clean);
-      (row[field] as any) = isNaN(num as number) ? null : num;
+    if (field === 'backsightM' || field === 'intermediateSightM' || field === 'foresightM') {
+      row[field] = parseStaffInput(value);
+    } else if (field === 'offsetMeters') {
+      const num = parseFloat(value.trim());
+      row.offsetMeters = isNaN(num) ? null : num;
     } else {
       (row[field] as any) = value;
     }
@@ -129,31 +314,85 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
     triggerSave(updated);
   };
 
-  // Add a single blank row
-  const handleAddRow = () => {
-    const lastRow = gridRows[gridRows.length - 1];
-    let nextChainage = '';
+  // Rock-Solid Keyboard Navigation: Enter moves down without mouse!
+  const handleKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    rowIndex: number,
+    colIndex: number
+  ) => {
+    // ENTER or DOWN ARROW: Move to the same column on the next row
+    if (e.key === 'Enter' || e.key === 'ArrowDown') {
+      e.preventDefault();
 
-    // Smart chainage suggestion if last row had e.g. 0+020
-    if (lastRow?.chainage && lastRow.chainage.includes('+')) {
-      const parts = lastRow.chainage.split('+');
-      const km = parseFloat(parts[0]) || 0;
-      const m = parseFloat(parts[1]) || 0;
-      const nextM = m + (project.chainageIntervalDefault || 20);
-      nextChainage = `${km}+${nextM < 100 ? (nextM < 10 ? '00' + nextM : '0' + nextM) : nextM}`;
+      if (rowIndex === gridRows.length - 1) {
+        // Last row: Create a new row and focus the same column!
+        handleAddRow(colIndex);
+      } else {
+        // Move focus down to next row, same column
+        const nextKey = `${rowIndex + 1}-${colIndex}`;
+        const nextInput = inputRefs.current[nextKey];
+        if (nextInput) {
+          nextInput.focus();
+          nextInput.select();
+        }
+      }
     }
+
+    // UP ARROW: Move to the same column on the row above
+    if (e.key === 'ArrowUp') {
+      if (rowIndex > 0) {
+        e.preventDefault();
+        const prevKey = `${rowIndex - 1}-${colIndex}`;
+        const prevInput = inputRefs.current[prevKey];
+        if (prevInput) {
+          prevInput.focus();
+          prevInput.select();
+        }
+      }
+    }
+
+    // TAB: Default browser tab navigation moves across columns
+  };
+
+  // Add Row (with smart offset auto-advance)
+  const handleAddRow = (focusCol = 3) => {
+    const lastRow = gridRows[gridRows.length - 1];
+    let nextChainage = lastRow?.chainage || '1+360';
+    let nextOffset = 0.0;
+    const offsetsSeq = [-4.5, -3.0, 0.0, 3.0, 4.5];
+
+    if (lastRow?.offsetMeters !== null && lastRow?.offsetMeters !== undefined) {
+      const curIdx = offsetsSeq.findIndex((o) => Math.abs(o - lastRow.offsetMeters!) < 0.1);
+      if (curIdx >= 0 && curIdx < offsetsSeq.length - 1) {
+        nextOffset = offsetsSeq[curIdx + 1];
+        nextChainage = lastRow.chainage || '1+360';
+      } else {
+        // Advance chainage +20m and reset to -4.5
+        nextOffset = -4.5;
+        if (lastRow.chainage && lastRow.chainage.includes('+')) {
+          const parts = lastRow.chainage.split('+');
+          const km = parseFloat(parts[0]) || 0;
+          const m = parseFloat(parts[1]) || 0;
+          const nextM = m + (project.chainageIntervalDefault || 20);
+          nextChainage = `${km}+${nextM < 100 ? (nextM < 10 ? '00' + nextM : '0' + nextM) : nextM}`;
+        }
+      }
+    }
+
+    const posTag = nextOffset < 0 ? 'L' : nextOffset > 0 ? 'R' : 'CL';
+    const pointLabel = `${nextChainage} ${nextOffset !== 0 ? (nextOffset > 0 ? '+' + nextOffset : nextOffset) : 'CL'}`;
 
     const newRow: FieldBookObservation = {
       id: `row-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       projectId: project.id,
       setupId: 'setup-1',
       setupNumber: 1,
-      pointId: nextChainage ? `${nextChainage} CL` : '',
+      pointId: pointLabel,
       pointType: 'GROUND',
       chainage: nextChainage,
       chainageMeters: null,
-      position: 'CL',
-      offsetMeters: 0,
+      position: posTag as any,
+      offsetMeters: nextOffset,
       backsightM: null,
       intermediateSightM: null,
       foresightM: null,
@@ -163,14 +402,62 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
       fallM: null,
       calculatedRL_RF: null,
       designRLM: null,
-      remarks: '',
+      remarks: nextOffset !== 0 ? `${nextOffset > 0 ? 'Right' : 'Left'} (${nextOffset}m)` : 'Centreline',
       source: 'manual',
       isReviewed: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
+    setPendingFocus({ row: gridRows.length, col: focusCol });
     const updated = [...gridRows, newRow];
+    setGridRows(updated);
+    triggerSave(updated);
+  };
+
+  // Quick Cross-Section Generator (-4.5, -3, 0, 3, 4.5)
+  const handleAddCrossSection = () => {
+    const lastRow = gridRows[gridRows.length - 1];
+    let ch = '1+360';
+
+    if (lastRow?.chainage && lastRow.chainage.includes('+')) {
+      const parts = lastRow.chainage.split('+');
+      const km = parseFloat(parts[0]) || 0;
+      const m = parseFloat(parts[1]) || 0;
+      const nextM = m + (project.chainageIntervalDefault || 20);
+      ch = `${km}+${nextM < 100 ? (nextM < 10 ? '00' + nextM : '0' + nextM) : nextM}`;
+    }
+
+    const offsets = [-4.5, -3.0, 0.0, 3.0, 4.5];
+    const newRows: FieldBookObservation[] = offsets.map((off, idx) => ({
+      id: `cs-row-${Date.now()}-${idx}`,
+      projectId: project.id,
+      setupId: 'setup-1',
+      setupNumber: 1,
+      pointId: `${ch} ${off !== 0 ? (off > 0 ? '+' + off : off) : 'CL'}`,
+      pointType: 'GROUND',
+      chainage: ch,
+      chainageMeters: null,
+      position: off < 0 ? 'L' : off > 0 ? 'R' : 'CL',
+      offsetMeters: off,
+      backsightM: null,
+      intermediateSightM: null,
+      foresightM: null,
+      knownRLM: null,
+      calculatedRL_HI: null,
+      riseM: null,
+      fallM: null,
+      calculatedRL_RF: null,
+      designRLM: null,
+      remarks: off === 0 ? 'Centreline' : off < 0 ? `Left Offset (${off}m)` : `Right Offset (+${off}m)`,
+      source: 'manual',
+      isReviewed: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+
+    setPendingFocus({ row: gridRows.length, col: 4 }); // Focus IS column of the first new row
+    const updated = [...gridRows, ...newRows];
     setGridRows(updated);
     triggerSave(updated);
   };
@@ -210,20 +497,15 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
     triggerSave(updated);
   };
 
-  // Delete row
   const handleDeleteRow = (index: number) => {
-    if (gridRows.length <= 1) {
-      alert('Cannot delete all rows. Clear the readings instead.');
-      return;
-    }
+    if (gridRows.length <= 1) return;
     const updated = gridRows.filter((_, idx) => idx !== index);
     setGridRows(updated);
     triggerSave(updated);
   };
 
-  // Clear sheet
   const handleClearSheet = () => {
-    if (confirm('Clear all observations on this sheet? This cannot be undone.')) {
+    if (confirm('Clear all observations on this sheet?')) {
       const resetRow: FieldBookObservation = {
         id: `row-${Date.now()}`,
         projectId: project.id,
@@ -231,20 +513,20 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
         setupNumber: 1,
         pointId: 'BM-01',
         pointType: 'BM',
-        chainage: '0+000',
-        chainageMeters: 0,
+        chainage: '1+340',
+        chainageMeters: 1340,
         position: 'CL',
         offsetMeters: 0,
         backsightM: null,
         intermediateSightM: null,
         foresightM: null,
-        knownRLM: null,
-        calculatedRL_HI: null,
+        knownRLM: 1830.0,
+        calculatedRL_HI: 1830.0,
         riseM: null,
         fallM: null,
-        calculatedRL_RF: null,
+        calculatedRL_RF: 1830.0,
         designRLM: null,
-        remarks: '',
+        remarks: 'Benchmark',
         source: 'manual',
         isReviewed: true,
         createdAt: new Date().toISOString(),
@@ -255,12 +537,11 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
     }
   };
 
-  // Paste from Excel / Google Sheets
   const handlePasteFromClipboard = async () => {
     try {
       const text = await navigator.clipboard.readText();
       if (!text || text.trim() === '') {
-        alert('Clipboard is empty. Copy a table from Excel first!');
+        alert('Clipboard is empty. Copy table from Excel first.');
         return;
       }
 
@@ -270,16 +551,15 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
       for (let i = 0; i < lines.length; i++) {
         const cols = lines[i].split('\t');
         if (cols.length < 2) continue;
-
-        // Skip headers if user copied header line
         if (/STATION|POINT|BS|IS|FS|RL|CHAINAGE/i.test(cols[0])) continue;
 
         const stn = cols[0]?.trim() || `Pt-${i + 1}`;
         const ch = cols[1]?.trim() || '';
-        const bs = cols[2] && !isNaN(parseFloat(cols[2])) ? parseFloat(cols[2]) : null;
-        const isReading = cols[3] && !isNaN(parseFloat(cols[3])) ? parseFloat(cols[3]) : null;
-        const fs = cols[4] && !isNaN(parseFloat(cols[4])) ? parseFloat(cols[4]) : null;
-        const remarks = cols[5]?.trim() || '';
+        const off = cols[2] && !isNaN(parseFloat(cols[2])) ? parseFloat(cols[2]) : 0;
+        const bs = cols[3] ? parseStaffInput(cols[3]) : null;
+        const isReading = cols[4] ? parseStaffInput(cols[4]) : null;
+        const fs = cols[5] ? parseStaffInput(cols[5]) : null;
+        const remarks = cols[6]?.trim() || '';
 
         newRows.push({
           id: `paste-row-${Date.now()}-${i}`,
@@ -290,12 +570,12 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
           pointType: bs !== null && i === 0 ? 'BM' : fs !== null ? 'CP' : 'GROUND',
           chainage: ch,
           chainageMeters: null,
-          position: 'CL',
-          offsetMeters: 0,
+          position: off < 0 ? 'L' : off > 0 ? 'R' : 'CL',
+          offsetMeters: off,
           backsightM: bs,
           intermediateSightM: isReading,
           foresightM: fs,
-          knownRLM: i === 0 && bs !== null ? 100.0 : null,
+          knownRLM: i === 0 && bs !== null ? parseFloat(benchmarkRL) || 1830.0 : null,
           calculatedRL_HI: null,
           riseM: null,
           fallM: null,
@@ -310,43 +590,16 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
       }
 
       if (newRows.length > 0) {
-        const updated = [...gridRows.filter((r) => r.pointId !== 'BM-01' || r.backsightM !== null), ...newRows];
-        setGridRows(updated);
-        triggerSave(updated);
-        alert(`Successfully imported ${newRows.length} rows from Excel clipboard!`);
-      } else {
-        alert('Could not detect tabular columns from clipboard. Ensure you copied columns from Excel or Sheets.');
+        setGridRows(newRows);
+        triggerSave(newRows);
+        alert(`Pasted ${newRows.length} rows directly from Excel!`);
       }
     } catch (err: any) {
-      alert('Could not read clipboard. Please check browser permissions: ' + err.message);
+      alert('Could not read clipboard: ' + err.message);
     }
   };
 
-  // Keyboard navigation for spreadsheet (Enter adds row or moves down)
-  const handleKeyDown = (
-    e: React.KeyboardEvent<HTMLInputElement>,
-    rowIndex: number,
-    colIndex: number
-  ) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (rowIndex === gridRows.length - 1) {
-        handleAddRow();
-      } else {
-        // Focus the same column on next row
-        setTimeout(() => {
-          const inputs = tableRef.current?.querySelectorAll(`tr[data-row="${rowIndex + 1}"] input`);
-          if (inputs && inputs[colIndex]) {
-            (inputs[colIndex] as HTMLInputElement).focus();
-          }
-        }, 50);
-      }
-    }
-  };
-
-  // ---------------------------------------------------------------------------
-  // Camera & Field Book Photo Scanning Workflow
-  // ---------------------------------------------------------------------------
+  // Photo Scanning
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -376,7 +629,7 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
   const handleRunOcr = async () => {
     if (!processedPhotoSrc) return;
     setIsOcrRunning(true);
-    setOcrProgressMsg('Initializing OCR on device...');
+    setOcrProgressMsg('Reading handwriting on device...');
 
     try {
       const res = await scanFieldBookImage(processedPhotoSrc, (pct, status) => {
@@ -390,14 +643,13 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
     }
   };
 
-  // Apply scanned rows to the main spreadsheet
   const handleApplyOcrRowsToGrid = () => {
     if (ocrRows.length === 0) return;
 
     const converted: FieldBookObservation[] = ocrRows.map((r, i) => {
-      const bs = r.backsight ? parseFloat(r.backsight) : null;
-      const isReading = r.intermediateSight ? parseFloat(r.intermediateSight) : null;
-      const fs = r.foresight ? parseFloat(r.foresight) : null;
+      const bs = r.backsight ? parseStaffInput(r.backsight) : null;
+      const isReading = r.intermediateSight ? parseStaffInput(r.intermediateSight) : null;
+      const fs = r.foresight ? parseStaffInput(r.foresight) : null;
 
       return {
         id: `ocr-row-${Date.now()}-${i}`,
@@ -409,11 +661,11 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
         chainage: r.chainage || '',
         chainageMeters: null,
         position: r.position,
-        offsetMeters: 0,
-        backsightM: isNaN(bs as number) ? null : bs,
-        intermediateSightM: isNaN(isReading as number) ? null : isReading,
-        foresightM: isNaN(fs as number) ? null : fs,
-        knownRLM: i === 0 && bs !== null ? 100.0 : null,
+        offsetMeters: r.position === 'L' ? -3.0 : r.position === 'R' ? 3.0 : 0.0,
+        backsightM: bs,
+        intermediateSightM: isReading,
+        foresightM: fs,
+        knownRLM: i === 0 && bs !== null ? parseFloat(benchmarkRL) || 1830.0 : null,
         calculatedRL_HI: null,
         riseM: null,
         fallM: null,
@@ -427,247 +679,318 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
       };
     });
 
-    const updated = [...gridRows.filter((r) => r.pointId !== 'BM-01' || r.backsightM !== null), ...converted];
+    const updated = [...gridRows.filter((r) => r.backsightM !== null || r.intermediateSightM !== null), ...converted];
     setGridRows(updated);
     triggerSave(updated);
     setShowScanModal(false);
     setPhotoSrc(null);
     setOcrRows([]);
-    alert(`Transferred ${converted.length} scanned rows into your Survey Book! All calculations computed.`);
+    alert(`Transferred ${converted.length} scanned rows into your Survey Book!`);
   };
 
   return (
-    <div className={`space-y-4 ${sunlightMode ? 'text-slate-950' : 'text-slate-900'}`}>
-      {/* Action Header: Field Book Toolbar */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-600 font-extrabold">
-            📘
-          </div>
+    <div className={`space-y-4 ${isDark ? 'text-slate-100' : isSunlight ? 'text-slate-950' : 'text-slate-900'}`}>
+      {/* Top Banner: Benchmark Setup & Quick Tools */}
+      <div
+        className={`border rounded-2xl p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 ${
+          isDark
+            ? 'bg-slate-800/90 border-slate-700'
+            : isSunlight
+            ? 'bg-amber-50 border-amber-300'
+            : 'bg-white border-slate-200'
+        }`}
+      >
+        <div className="flex items-center gap-3 flex-wrap">
           <div>
-            <h2 className="text-base sm:text-lg font-black tracking-tight text-slate-900 flex items-center gap-2">
-              <span>Survey Level Book</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold border border-slate-200">
-                {calculatedObservations.length} Rows
+            <h2 className="text-base font-black tracking-tight flex items-center gap-2">
+              <span>Road Levelling Field Book</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold border border-slate-300 dark:border-slate-600">
+                {calculatedObservations.length} Readings
               </span>
             </h2>
-            <p className="text-xs text-slate-500 font-medium">
-              Type directly into cells like Excel, or snap a photo of your paper level book.
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Type directly into cells. Press <strong>Enter</strong> to move down.
             </p>
+          </div>
+
+          {/* Benchmark Elevation Input Box */}
+          <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 p-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs">
+            <span className="font-black text-slate-700 dark:text-slate-200">
+              Benchmark (BM) RL:
+            </span>
+            <input
+              type="text"
+              value={benchmarkRL}
+              onChange={(e) => setBenchmarkRL(e.target.value)}
+              placeholder="1830.000"
+              className="w-24 px-2 py-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg font-bold font-mono text-slate-900 dark:text-white text-xs"
+              title="Reference level of initial benchmark"
+            />
+            <span className="text-slate-400 font-bold">m</span>
+          </div>
+
+          {/* Reading Unit Toggle (Metres vs mm) */}
+          <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 p-1 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-bold">
+            <button
+              onClick={() => setReadingUnit('m')}
+              className={`px-2 py-1 rounded-lg transition ${
+                readingUnit === 'm'
+                  ? 'bg-blue-600 text-white font-black'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              m (e.g. 2.033)
+            </button>
+            <button
+              onClick={() => setReadingUnit('mm')}
+              className={`px-2 py-1 rounded-lg transition ${
+                readingUnit === 'mm'
+                  ? 'bg-blue-600 text-white font-black'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              mm (e.g. 2033)
+            </button>
           </div>
         </div>
 
-        {/* Action Buttons */}
+        {/* Action Toolbar */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Snap Photo Button (Primary) */}
+          {/* Scan Photo Button */}
           <button
             onClick={() => setShowScanModal(true)}
-            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-2 shadow-md hover:shadow transition"
+            className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow"
           >
             <Camera className="w-4 h-4" />
-            <span>Scan Survey Book Photo</span>
+            <span>Scan Field Book Photo</span>
           </button>
 
-          {/* Add Row Button */}
+          {/* Quick Cross-Section Interval Button */}
           <button
-            onClick={handleAddRow}
-            className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 transition"
+            onClick={handleAddCrossSection}
+            className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 shadow transition"
+            title="Adds 5 cross-section rows (-4.5, -3, 0, 3, 4.5) for next chainage"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>+ Cross-Section (-4.5 to +4.5)</span>
+          </button>
+
+          {/* Add Row */}
+          <button
+            onClick={() => handleAddRow(4)}
+            className="px-3 py-2 rounded-xl bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1"
           >
             <Plus className="w-4 h-4" />
             <span>+ 1 Row</span>
           </button>
 
-          {/* Add 5 Rows */}
+          {/* Field Guide Modal Button */}
           <button
-            onClick={handleAdd5Rows}
-            className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-200 transition"
+            onClick={onOpenFieldGuide}
+            className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-300 dark:border-slate-700 flex items-center gap-1"
+            title="Open simple user guide for surveyors"
           >
-            <span>+ 5 Rows</span>
-          </button>
-
-          {/* Paste from Excel */}
-          <button
-            onClick={handlePasteFromClipboard}
-            className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-200 flex items-center gap-1.5 transition"
-            title="Paste tab-separated columns directly from Excel or Google Sheets"
-          >
-            <Clipboard className="w-3.5 h-3.5 text-slate-500" />
-            <span>Paste Excel</span>
-          </button>
-
-          {/* Export Excel */}
-          <button
-            onClick={onExportExcel}
-            className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow transition"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Excel (.xlsx)</span>
+            <HelpCircle className="w-3.5 h-3.5 text-amber-500" />
+            <span>Field Guide</span>
           </button>
         </div>
       </div>
 
-      {/* Main Excel-Style Interactive Spreadsheet */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        {/* Table Header Notes */}
-        <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600 font-medium">
-          <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" />
-              <strong>BS</strong>: Backsight (Sets HI)
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
-              <strong>IS</strong>: Intermediate
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />
-              <strong>FS</strong>: Foresight (Change Point)
-            </span>
-          </div>
-          <span className="hidden sm:inline text-slate-400">
-            Tip: Press <strong>Enter</strong> to move down. Last row auto-adds.
-          </span>
-        </div>
-
-        {/* Scrollable Spreadsheet Table */}
-        <div className="overflow-x-auto max-h-[68vh] relative">
-          <table ref={tableRef} className="w-full text-left border-collapse text-xs">
-            <thead className="bg-slate-100/90 text-slate-700 font-black text-[11px] uppercase tracking-wider sticky top-0 z-10 border-b border-slate-300 shadow-sm backdrop-blur-sm">
+      {/* Main Interactive Field Book Table */}
+      <div
+        className={`border rounded-2xl shadow-sm overflow-hidden ${
+          isDark
+            ? 'bg-slate-900 border-slate-700'
+            : isSunlight
+            ? 'bg-white border-amber-300'
+            : 'bg-white border-slate-200'
+        }`}
+      >
+        <div className="overflow-x-auto max-h-[70vh] relative">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead
+              className={`font-black text-[11px] uppercase tracking-wider sticky top-0 z-10 border-b shadow-sm ${
+                isDark
+                  ? 'bg-slate-800 text-slate-300 border-slate-700'
+                  : 'bg-slate-100 text-slate-700 border-slate-300'
+              }`}
+            >
               <tr>
-                <th className="py-2.5 px-2 text-center w-10 border-r border-slate-200">#</th>
-                <th className="py-2.5 px-3 min-w-[130px] border-r border-slate-200">Station / Point</th>
-                <th className="py-2.5 px-3 min-w-[100px] border-r border-slate-200">Chainage</th>
-                <th className="py-2.5 px-3 text-right text-blue-700 min-w-[90px] border-r border-slate-200 bg-blue-50/50">
+                <th className="py-2 px-2 text-center w-8 border-r border-slate-200 dark:border-slate-700">#</th>
+                <th className="py-2 px-2.5 min-w-[110px] border-r border-slate-200 dark:border-slate-700">Type / Feature</th>
+                <th className="py-2 px-2.5 min-w-[120px] border-r border-slate-200 dark:border-slate-700">Station / Point</th>
+                <th className="py-2 px-2.5 min-w-[90px] border-r border-slate-200 dark:border-slate-700">Chainage</th>
+                <th className="py-2 px-2 text-center min-w-[85px] border-r border-slate-200 dark:border-slate-700 bg-amber-500/10">
+                  Offset (m)
+                </th>
+                <th className="py-2 px-2.5 text-right text-blue-600 dark:text-blue-400 min-w-[85px] border-r border-slate-200 dark:border-slate-700 bg-blue-50/40 dark:bg-blue-950/20">
                   BS (m)
                 </th>
-                <th className="py-2.5 px-3 text-right text-emerald-700 min-w-[90px] border-r border-slate-200 bg-emerald-50/50">
+                <th className="py-2 px-2.5 text-right text-emerald-600 dark:text-emerald-400 min-w-[85px] border-r border-slate-200 dark:border-slate-700 bg-emerald-50/40 dark:bg-emerald-950/20">
                   IS (m)
                 </th>
-                <th className="py-2.5 px-3 text-right text-amber-700 min-w-[90px] border-r border-slate-200 bg-amber-50/50">
+                <th className="py-2 px-2.5 text-right text-amber-600 dark:text-amber-400 min-w-[85px] border-r border-slate-200 dark:border-slate-700 bg-amber-50/40 dark:bg-amber-950/20">
                   FS (m)
                 </th>
-                <th className="py-2.5 px-3 text-right font-bold text-slate-600 min-w-[100px] border-r border-slate-200">
+                <th className="py-2 px-2.5 text-right font-bold text-slate-500 dark:text-slate-400 min-w-[90px] border-r border-slate-200 dark:border-slate-700">
                   HI (m)
                 </th>
-                <th className="py-2.5 px-3 text-right text-teal-700 min-w-[80px] border-r border-slate-200">
-                  Rise (m)
+                <th className="py-2 px-2 text-right text-teal-600 dark:text-teal-400 min-w-[75px] border-r border-slate-200 dark:border-slate-700">
+                  Rise
                 </th>
-                <th className="py-2.5 px-3 text-right text-rose-700 min-w-[80px] border-r border-slate-200">
-                  Fall (m)
+                <th className="py-2 px-2 text-right text-rose-600 dark:text-rose-400 min-w-[75px] border-r border-slate-200 dark:border-slate-700">
+                  Fall
                 </th>
-                <th className="py-2.5 px-3 text-right font-black text-slate-900 min-w-[120px] border-r border-slate-200 bg-amber-50/30">
+                <th className="py-2 px-3 text-right font-black min-w-[115px] border-r border-slate-200 dark:border-slate-700 bg-amber-50/50 dark:bg-amber-950/20 text-slate-900 dark:text-white">
                   RL ({isIntegerMm ? 'mm' : 'm'})
                 </th>
-                <th className="py-2.5 px-3 min-w-[150px] border-r border-slate-200">Remarks</th>
-                <th className="py-2.5 px-2 text-center w-10"></th>
+                <th className="py-2 px-3 min-w-[130px] border-r border-slate-200 dark:border-slate-700">Remarks</th>
+                <th className="py-2 px-2 text-center w-8"></th>
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-slate-200 font-mono">
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono">
               {calculatedObservations.map((obs, idx) => {
                 const isBM = obs.pointType === 'BM' || (obs.backsightM !== null && idx === 0);
+                const isPeg = obs.pointType === 'PEG';
                 const isCP = obs.foresightM !== null;
 
                 return (
                   <tr
                     key={obs.id}
-                    data-row={idx}
-                    className={`hover:bg-amber-50/40 transition-colors ${
-                      isCP ? 'bg-amber-50/20' : isBM ? 'bg-blue-50/20' : ''
+                    className={`transition-colors ${
+                      isCP
+                        ? 'bg-amber-50/30 dark:bg-amber-950/20'
+                        : isPeg
+                        ? 'bg-purple-50/30 dark:bg-purple-950/20'
+                        : isBM
+                        ? 'bg-blue-50/30 dark:bg-blue-950/20'
+                        : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
                     }`}
                   >
-                    {/* Row Index */}
-                    <td className="py-1.5 px-2 text-center text-slate-400 font-sans text-[11px] font-bold border-r border-slate-200 bg-slate-50/50 select-none">
+                    {/* 0: Line # */}
+                    <td className="py-1 px-2 text-center text-slate-400 font-sans text-[11px] font-bold border-r border-slate-200 dark:border-slate-700 select-none">
                       {idx + 1}
                     </td>
 
-                    {/* Station / Point ID (Editable) */}
-                    <td className="p-0 border-r border-slate-200">
+                    {/* 1: Type / Feature (Dropdown) */}
+                    <td className="p-0 border-r border-slate-200 dark:border-slate-700">
+                      <select
+                        value={obs.pointType}
+                        onChange={(e) => handleCellChange(idx, 'pointType', e.target.value)}
+                        className="w-full h-full px-2 py-1.5 bg-transparent text-[11px] font-sans font-bold text-slate-700 dark:text-slate-300 focus:outline-none"
+                      >
+                        <option value="GROUND">Ground</option>
+                        <option value="BM">Benchmark</option>
+                        <option value="PEG">Peg Top</option>
+                        <option value="CP">Change Point</option>
+                        <option value="BEACON">Road Beacon</option>
+                      </select>
+                    </td>
+
+                    {/* 2: Station / Point ID (Editable) */}
+                    <td className="p-0 border-r border-slate-200 dark:border-slate-700">
                       <input
+                        ref={(el) => { inputRefs.current[`${idx}-1`] = el; }}
                         type="text"
                         value={obs.pointId || ''}
                         onChange={(e) => handleCellChange(idx, 'pointId', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, idx, 0)}
-                        placeholder="e.g. BM-01"
-                        className="w-full h-full px-3 py-2 bg-transparent text-slate-900 font-bold font-sans text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        onKeyDown={(e) => handleKeyDown(e, idx, 1)}
+                        placeholder="Pt"
+                        className="w-full h-full px-2.5 py-1.5 bg-transparent font-sans font-bold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
                       />
                     </td>
 
-                    {/* Chainage (Editable) */}
-                    <td className="p-0 border-r border-slate-200">
+                    {/* 3: Chainage (Editable) */}
+                    <td className="p-0 border-r border-slate-200 dark:border-slate-700">
                       <input
+                        ref={(el) => { inputRefs.current[`${idx}-2`] = el; }}
                         type="text"
                         value={obs.chainage || ''}
                         onChange={(e) => handleCellChange(idx, 'chainage', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, idx, 1)}
-                        placeholder="0+000"
-                        className="w-full h-full px-3 py-2 bg-transparent text-slate-700 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                      />
-                    </td>
-
-                    {/* Backsight (BS) (Editable) */}
-                    <td className="p-0 border-r border-slate-200 bg-blue-50/30">
-                      <input
-                        type="number"
-                        step="0.001"
-                        value={obs.backsightM !== null ? obs.backsightM : ''}
-                        onChange={(e) => handleCellChange(idx, 'backsightM', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, idx, 2)}
-                        placeholder=""
-                        className="w-full h-full px-3 py-2 bg-transparent text-right text-blue-800 font-black text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="1+360"
+                        className="w-full h-full px-2.5 py-1.5 bg-transparent text-slate-700 dark:text-slate-300 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
                       />
                     </td>
 
-                    {/* Intermediate Sight (IS) (Editable) */}
-                    <td className="p-0 border-r border-slate-200 bg-emerald-50/30">
+                    {/* 4: Offset / Interval (m) (Editable: e.g. -4.5, -3, 0, 3, 4.5) */}
+                    <td className="p-0 border-r border-slate-200 dark:border-slate-700 bg-amber-500/5">
                       <input
+                        ref={(el) => { inputRefs.current[`${idx}-3`] = el; }}
                         type="number"
-                        step="0.001"
-                        value={obs.intermediateSightM !== null ? obs.intermediateSightM : ''}
-                        onChange={(e) => handleCellChange(idx, 'intermediateSightM', e.target.value)}
+                        step="0.5"
+                        value={obs.offsetMeters !== null && obs.offsetMeters !== undefined ? obs.offsetMeters : ''}
+                        onChange={(e) => handleCellChange(idx, 'offsetMeters', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, idx, 3)}
-                        placeholder=""
-                        className="w-full h-full px-3 py-2 bg-transparent text-right text-emerald-800 font-bold text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        placeholder="0"
+                        className="w-full h-full px-2 py-1.5 text-center font-bold text-amber-700 dark:text-amber-400 bg-transparent focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
                       />
                     </td>
 
-                    {/* Foresight (FS) (Editable) */}
-                    <td className="p-0 border-r border-slate-200 bg-amber-50/30">
+                    {/* 5: Backsight (BS) (Editable) */}
+                    <td className="p-0 border-r border-slate-200 dark:border-slate-700 bg-blue-50/30 dark:bg-blue-950/10">
                       <input
-                        type="number"
-                        step="0.001"
-                        value={obs.foresightM !== null ? obs.foresightM : ''}
-                        onChange={(e) => handleCellChange(idx, 'foresightM', e.target.value)}
+                        ref={(el) => { inputRefs.current[`${idx}-4`] = el; }}
+                        type="text"
+                        value={obs.backsightM !== null && obs.backsightM !== undefined ? (readingUnit === 'mm' ? Math.round(obs.backsightM * 1000) : obs.backsightM.toFixed(3)) : ''}
+                        onChange={(e) => handleCellChange(idx, 'backsightM', e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, idx, 4)}
                         placeholder=""
-                        className="w-full h-full px-3 py-2 bg-transparent text-right text-amber-800 font-black text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        className="w-full h-full px-2.5 py-1.5 text-right font-bold text-blue-700 dark:text-blue-400 bg-transparent focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
                     </td>
 
-                    {/* HI (Collimation) (Auto-Computed) */}
-                    <td className="py-2 px-3 text-right font-bold text-slate-600 border-r border-slate-200 bg-slate-50/50 select-none">
+                    {/* 6: Intermediate Sight (IS) (Editable) */}
+                    <td className="p-0 border-r border-slate-200 dark:border-slate-700 bg-emerald-50/30 dark:bg-emerald-950/10">
+                      <input
+                        ref={(el) => { inputRefs.current[`${idx}-5`] = el; }}
+                        type="text"
+                        value={obs.intermediateSightM !== null && obs.intermediateSightM !== undefined ? (readingUnit === 'mm' ? Math.round(obs.intermediateSightM * 1000) : obs.intermediateSightM.toFixed(3)) : ''}
+                        onChange={(e) => handleCellChange(idx, 'intermediateSightM', e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(e, idx, 5)}
+                        placeholder=""
+                        className="w-full h-full px-2.5 py-1.5 text-right font-bold text-emerald-700 dark:text-emerald-400 bg-transparent focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                    </td>
+
+                    {/* 7: Foresight (FS) (Editable) */}
+                    <td className="p-0 border-r border-slate-200 dark:border-slate-700 bg-amber-50/30 dark:bg-amber-950/10">
+                      <input
+                        ref={(el) => { inputRefs.current[`${idx}-6`] = el; }}
+                        type="text"
+                        value={obs.foresightM !== null && obs.foresightM !== undefined ? (readingUnit === 'mm' ? Math.round(obs.foresightM * 1000) : obs.foresightM.toFixed(3)) : ''}
+                        onChange={(e) => handleCellChange(idx, 'foresightM', e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(e, idx, 6)}
+                        placeholder=""
+                        className="w-full h-full px-2.5 py-1.5 text-right font-bold text-amber-700 dark:text-amber-400 bg-transparent focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </td>
+
+                    {/* 8: HI (Collimation) */}
+                    <td className="py-1.5 px-2.5 text-right font-bold text-slate-500 dark:text-slate-400 border-r border-slate-200 dark:border-slate-700 select-none">
                       {obs.backsightM !== null && obs.knownRLM !== null
                         ? (obs.knownRLM + obs.backsightM).toFixed(3)
                         : ''}
                     </td>
 
-                    {/* Rise (Auto-Computed) */}
-                    <td className="py-2 px-3 text-right text-teal-700 font-semibold border-r border-slate-200 bg-slate-50/50 select-none">
+                    {/* 9: Rise */}
+                    <td className="py-1.5 px-2 text-right text-teal-700 dark:text-teal-400 border-r border-slate-200 dark:border-slate-700 select-none">
                       {obs.riseM !== null ? obs.riseM.toFixed(3) : ''}
                     </td>
 
-                    {/* Fall (Auto-Computed) */}
-                    <td className="py-2 px-3 text-right text-rose-700 font-semibold border-r border-slate-200 bg-slate-50/50 select-none">
+                    {/* 10: Fall */}
+                    <td className="py-1.5 px-2 text-right text-rose-700 dark:text-rose-400 border-r border-slate-200 dark:border-slate-700 select-none">
                       {obs.fallM !== null ? obs.fallM.toFixed(3) : ''}
                     </td>
 
-                    {/* Reduced Level (RL) (Auto-Computed & Formatted) */}
-                    <td className="py-2 px-3 text-right font-black text-slate-900 border-r border-slate-200 bg-amber-50/30 select-none">
+                    {/* 11: Reduced Level (RL) */}
+                    <td className="py-1.5 px-3 text-right font-black border-r border-slate-200 dark:border-slate-700 bg-amber-500/10 select-none text-slate-900 dark:text-white">
                       {obs.calculatedRL_HI !== null ? (
                         isIntegerMm ? (
                           <div title={`${obs.calculatedRL_HI.toFixed(3)} m`}>
                             <span>{formatIntegerMm(obs.calculatedRL_HI)}</span>
-                            <span className="text-[10px] text-slate-500 font-normal block">
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal block">
                               {obs.calculatedRL_HI.toFixed(3)} m
                             </span>
                           </div>
@@ -675,28 +998,28 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
                           `${obs.calculatedRL_HI.toFixed(3)} m`
                         )
                       ) : (
-                        <span className="text-slate-300">-</span>
+                        <span className="text-slate-300 dark:text-slate-600">-</span>
                       )}
                     </td>
 
-                    {/* Remarks (Editable) */}
-                    <td className="p-0 border-r border-slate-200">
+                    {/* 12: Remarks */}
+                    <td className="p-0 border-r border-slate-200 dark:border-slate-700">
                       <input
+                        ref={(el) => { inputRefs.current[`${idx}-7`] = el; }}
                         type="text"
                         value={obs.remarks || ''}
                         onChange={(e) => handleCellChange(idx, 'remarks', e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, idx, 5)}
+                        onKeyDown={(e) => handleKeyDown(e, idx, 7)}
                         placeholder="Notes..."
-                        className="w-full h-full px-3 py-2 bg-transparent text-slate-600 font-sans text-xs focus:bg-white focus:outline-none"
+                        className="w-full h-full px-2 py-1.5 font-sans text-[11px] text-slate-600 dark:text-slate-300 bg-transparent focus:bg-white dark:focus:bg-slate-800 focus:outline-none"
                       />
                     </td>
 
-                    {/* Delete row action */}
-                    <td className="py-1 px-2 text-center">
+                    {/* 13: Delete action */}
+                    <td className="py-1 px-1.5 text-center">
                       <button
                         onClick={() => handleDeleteRow(idx)}
-                        className="p-1 hover:bg-rose-50 text-slate-300 hover:text-rose-600 rounded transition"
-                        title="Delete line"
+                        className="p-1 text-slate-300 hover:text-rose-600 dark:text-slate-600 dark:hover:text-rose-400 rounded transition"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -708,74 +1031,84 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
           </table>
         </div>
 
-        {/* Live Arithmetic Check Sticky Footer */}
-        <div className="bg-slate-900 text-white p-3.5 sm:px-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 border-t border-slate-800">
-          <div className="flex items-center gap-3">
+        {/* Quiet, Professional Bottom Status Bar (No Loud Error Banners!) */}
+        <div
+          className={`px-4 py-2.5 border-t flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs font-medium ${
+            isDark ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'
+          }`}
+        >
+          <div className="flex items-center gap-3 font-mono text-[11px]">
+            <span>
+              Lines: <strong>{gridRows.length}</strong>
+            </span>
+            <span>|</span>
+            <span>
+              ΣBS: <strong>{liveCheck.sumBS.toFixed(3)} m</strong>
+            </span>
+            <span>|</span>
+            <span>
+              ΣFS: <strong>{liveCheck.sumFS.toFixed(3)} m</strong>
+            </span>
+            <span>|</span>
             {liveCheck.isPassed ? (
-              <div className="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
-                <CheckCircle2 className="w-5 h-5" />
-              </div>
+              <span className="text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Run Closed (Check: {liveCheck.diffBS_FS.toFixed(3)} m)</span>
+              </span>
             ) : (
-              <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
-                <AlertTriangle className="w-5 h-5" />
-              </div>
+              <span className="text-slate-400 italic">
+                Active run in progress
+              </span>
             )}
-            <div>
-              <span className="font-black text-xs sm:text-sm tracking-tight text-white block">
-                {liveCheck.statusMessage}
-              </span>
-              <span className="text-[11px] text-slate-400 block font-mono">
-                ΣBS: <strong>{liveCheck.sumBS.toFixed(3)} m</strong> | ΣFS:{' '}
-                <strong>{liveCheck.sumFS.toFixed(3)} m</strong> | ΣBS−ΣFS:{' '}
-                <strong>{liveCheck.diffBS_FS.toFixed(3)} m</strong> | ΔRL:{' '}
-                <strong>{liveCheck.diffRL !== null ? `${liveCheck.diffRL.toFixed(3)} m` : '-'}</strong>
-              </span>
-            </div>
           </div>
 
-          <div className="flex items-center gap-2 self-end md:self-auto">
+          <div className="flex items-center gap-2 self-end sm:self-auto">
             <button
               onClick={handleClearSheet}
-              className="text-xs text-slate-400 hover:text-rose-400 underline font-medium px-2 py-1"
+              className="text-xs text-slate-400 hover:text-rose-500 underline px-2 py-1"
             >
               Clear Sheet
             </button>
             <button
-              onClick={handleAddRow}
-              className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow flex items-center gap-1.5"
+              onClick={() => handleAddRow(4)}
+              className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow flex items-center gap-1"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Next Row</span>
+              <span>Next Line</span>
             </button>
           </div>
         </div>
       </div>
 
       {/* --------------------------------------------------------------------- */}
-      {/* 📸 Survey Book Photo Scanner Modal with Immediate Correction         */}
+      {/* 📸 Survey Book Photo Scanner Modal with Amber Correction             */}
       {/* --------------------------------------------------------------------- */}
       {showScanModal && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-3 sm:p-6 backdrop-blur-sm">
-          <div className="bg-white border border-slate-300 rounded-3xl max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden text-slate-900">
+          <div
+            className={`max-w-5xl w-full max-h-[92vh] flex flex-col rounded-3xl shadow-2xl border overflow-hidden ${
+              isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+            }`}
+          >
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-              <div className="flex items-center gap-2.5">
-                <Camera className="w-5 h-5 text-amber-600" />
-                <h3 className="font-black text-base text-slate-900">
-                  Scan Paper Survey Book Page
+            <div className="px-6 py-4 border-b flex items-center justify-between border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <Camera className="w-5 h-5 text-amber-500" />
+                <h3 className="font-black text-base">
+                  Scan Field Book Page Photo
                 </h3>
               </div>
               <button
                 onClick={() => setShowScanModal(false)}
-                className="p-1 rounded-full text-slate-400 hover:text-slate-700"
+                className="p-1 text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Modal Body: Split Photo View & Interactive Extracted Table */}
+            {/* Split Screen */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 grid grid-cols-1 md:grid-cols-12 gap-6">
-              {/* Left Column: Photo View & Controls */}
+              {/* Photo Upload/Rotate on Left */}
               <div className="md:col-span-5 space-y-3">
                 <input
                   type="file"
@@ -803,7 +1136,7 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
                   </button>
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-300 flex items-center justify-center gap-1.5"
+                    className="py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-300 dark:border-slate-700 flex items-center justify-center gap-1.5"
                   >
                     <span>Upload Image</span>
                   </button>
@@ -811,7 +1144,7 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
 
                 {photoSrc ? (
                   <div className="space-y-3">
-                    <div className="relative rounded-2xl overflow-hidden border border-slate-300 bg-slate-950 max-h-[300px] flex items-center justify-center shadow-inner">
+                    <div className="relative rounded-2xl overflow-hidden border border-slate-300 dark:border-slate-700 bg-slate-950 max-h-[300px] flex items-center justify-center">
                       <img
                         src={processedPhotoSrc || photoSrc}
                         alt="Survey Book"
@@ -822,7 +1155,7 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
                     <div className="flex items-center justify-between gap-2">
                       <button
                         onClick={handleRotatePhoto}
-                        className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1 border border-slate-300"
+                        className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1 border border-slate-300 dark:border-slate-700"
                       >
                         <RotateCw className="w-3.5 h-3.5" />
                         <span>Rotate 90°</span>
@@ -839,55 +1172,53 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
                     </div>
 
                     {isOcrRunning && (
-                      <p className="text-xs text-blue-600 font-semibold animate-pulse text-center">
+                      <p className="text-xs text-blue-600 font-semibold text-center animate-pulse">
                         {ocrProgressMsg}
                       </p>
                     )}
                   </div>
                 ) : (
-                  <div className="border-2 border-dashed border-slate-300 rounded-2xl p-8 text-center text-slate-400 text-xs space-y-2">
-                    <Camera className="w-10 h-10 mx-auto text-slate-300" />
-                    <p>Snap a photo of your handwritten survey book page or upload an image.</p>
+                  <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-8 text-center text-slate-400 text-xs space-y-2">
+                    <Camera className="w-8 h-8 mx-auto text-slate-400" />
+                    <p>Take a picture of your survey book or upload an image.</p>
                   </div>
                 )}
               </div>
 
-              {/* Right Column: Editable Preview with Amber Uncertainty Highlighting */}
+              {/* Extracted table with amber highlighting on right */}
               <div className="md:col-span-7 flex flex-col justify-between space-y-3">
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-black text-xs uppercase tracking-wider text-slate-700">
-                      Extracted Readings for Verification ({ocrRows.length} rows)
+                    <h4 className="font-black text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                      Extracted Readings ({ocrRows.length} lines)
                     </h4>
-                    <span className="text-[11px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                      Amber cells = Check against photo
+                    <span className="text-[11px] text-amber-800 dark:text-amber-300 font-bold bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded border border-amber-300 dark:border-amber-700">
+                      Amber cells = Unclear digit, tap to fix
                     </span>
                   </div>
 
-                  <div className="border border-slate-200 rounded-xl overflow-x-auto max-h-[320px]">
+                  <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-x-auto max-h-[320px]">
                     <table className="w-full text-left text-xs border-collapse font-mono">
-                      <thead className="bg-slate-100 text-slate-700 uppercase font-black text-[10px] sticky top-0 border-b border-slate-200">
+                      <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 uppercase font-black text-[10px] sticky top-0 border-b border-slate-200 dark:border-slate-700">
                         <tr>
                           <th className="p-2">Station</th>
                           <th className="p-2">Chainage</th>
-                          <th className="p-2 text-blue-700">BS</th>
-                          <th className="p-2 text-emerald-700">IS</th>
-                          <th className="p-2 text-amber-700">FS</th>
-                          <th className="p-2 font-sans">Remarks</th>
+                          <th className="p-2 text-blue-600">BS</th>
+                          <th className="p-2 text-emerald-600">IS</th>
+                          <th className="p-2 text-amber-600">FS</th>
+                          <th className="p-2">Remarks</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-200">
+                      <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                         {ocrRows.length === 0 ? (
                           <tr>
                             <td colSpan={6} className="p-8 text-center text-slate-400 font-sans">
-                              {photoSrc
-                                ? 'Click "Extract Readings" to read handwriting from the photo.'
-                                : 'No photo uploaded yet.'}
+                              {photoSrc ? 'Click "Extract Readings" to read.' : 'No photo uploaded.'}
                             </td>
                           </tr>
                         ) : (
                           ocrRows.map((r, i) => (
-                            <tr key={r.tempId} className="hover:bg-slate-50">
+                            <tr key={r.tempId}>
                               <td className="p-1">
                                 <input
                                   type="text"
@@ -897,7 +1228,7 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
                                     up[i].pointId = e.target.value;
                                     setOcrRows(up);
                                   }}
-                                  className="w-20 px-1.5 py-1 border border-slate-300 rounded font-bold text-slate-900"
+                                  className="w-20 px-1.5 py-1 border border-slate-300 dark:border-slate-700 rounded font-bold bg-transparent"
                                 />
                               </td>
                               <td className="p-1">
@@ -909,7 +1240,7 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
                                     up[i].chainage = e.target.value;
                                     setOcrRows(up);
                                   }}
-                                  className="w-16 px-1.5 py-1 border border-slate-300 rounded text-slate-700"
+                                  className="w-16 px-1.5 py-1 border border-slate-300 dark:border-slate-700 rounded bg-transparent"
                                 />
                               </td>
                               <td className="p-1">
@@ -923,8 +1254,8 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
                                   }}
                                   className={`w-16 px-1.5 py-1 rounded text-right font-bold ${
                                     r.uncertainFields.includes('backsight')
-                                      ? 'bg-amber-100 border-2 border-amber-500 text-amber-950 font-black'
-                                      : 'border border-slate-300 text-blue-800'
+                                      ? 'bg-amber-100 dark:bg-amber-900 border-2 border-amber-500 text-amber-950 dark:text-amber-100 font-black'
+                                      : 'border border-slate-300 dark:border-slate-700 text-blue-600'
                                   }`}
                                 />
                               </td>
@@ -939,8 +1270,8 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
                                   }}
                                   className={`w-16 px-1.5 py-1 rounded text-right font-bold ${
                                     r.uncertainFields.includes('intermediateSight')
-                                      ? 'bg-amber-100 border-2 border-amber-500 text-amber-950 font-black'
-                                      : 'border border-slate-300 text-emerald-800'
+                                      ? 'bg-amber-100 dark:bg-amber-900 border-2 border-amber-500 text-amber-950 dark:text-amber-100 font-black'
+                                      : 'border border-slate-300 dark:border-slate-700 text-emerald-600'
                                   }`}
                                 />
                               </td>
@@ -955,8 +1286,8 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
                                   }}
                                   className={`w-16 px-1.5 py-1 rounded text-right font-bold ${
                                     r.uncertainFields.includes('foresight')
-                                      ? 'bg-amber-100 border-2 border-amber-500 text-amber-950 font-black'
-                                      : 'border border-slate-300 text-amber-800'
+                                      ? 'bg-amber-100 dark:bg-amber-900 border-2 border-amber-500 text-amber-950 dark:text-amber-100 font-black'
+                                      : 'border border-slate-300 dark:border-slate-700 text-amber-600'
                                   }`}
                                 />
                               </td>
@@ -969,7 +1300,7 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
                                     up[i].remarks = e.target.value;
                                     setOcrRows(up);
                                   }}
-                                  className="w-24 px-1.5 py-1 border border-slate-300 rounded font-sans text-slate-700 text-[11px]"
+                                  className="w-24 px-1.5 py-1 border border-slate-300 dark:border-slate-700 rounded font-sans text-[11px] bg-transparent"
                                 />
                               </td>
                             </tr>
@@ -980,15 +1311,14 @@ export const SurveyBookGrid: React.FC<SurveyBookGridProps> = ({
                   </div>
                 </div>
 
-                {/* Confirm & Drop Into Spreadsheet */}
                 {ocrRows.length > 0 && (
-                  <div className="pt-3 border-t border-slate-200 flex items-center justify-between">
+                  <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
                     <span className="text-xs text-slate-500">
-                      Check any amber numbers against your photo on the left.
+                      Compare amber numbers with photo on left.
                     </span>
                     <button
                       onClick={handleApplyOcrRowsToGrid}
-                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-lg transition flex items-center gap-1.5"
+                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow flex items-center gap-1.5"
                     >
                       <CheckCircle2 className="w-4 h-4" />
                       <span>Transfer into Survey Book</span>

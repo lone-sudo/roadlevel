@@ -21,13 +21,24 @@ import { PegSettingView } from './components/PegSetting/PegSettingView';
 import { DippingView } from './components/Dipping/DippingView';
 import { ReportsView } from './components/Reports/ReportsView';
 import { NewProjectModal } from './components/Modals/NewProjectModal';
+import { FieldGuideModal } from './components/FieldBook/FieldGuideModal';
 
 export function App() {
   const [activeProjectId, setActiveProjectId] = useState<string>('demo-project-r101');
   const [currentTab, setCurrentTab] = useState<string>('fieldbook');
-  const [sunlightMode, setSunlightMode] = useState<boolean>(false);
+  const [theme, setTheme] = useState<'light' | 'dark' | 'sunlight'>(() => {
+    const saved = localStorage.getItem('roadlevel_theme');
+    if (saved === 'dark' || saved === 'sunlight' || saved === 'light') return saved;
+    return 'light';
+  });
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
   const [showNewProjectModal, setShowNewProjectModal] = useState<boolean>(false);
+  const [showFieldGuideModal, setShowFieldGuideModal] = useState<boolean>(false);
+
+  // Sync theme changes to localStorage
+  useEffect(() => {
+    localStorage.setItem('roadlevel_theme', theme);
+  }, [theme]);
 
   // Initialise database and seed demo data on first launch
   useEffect(() => {
@@ -215,10 +226,18 @@ export function App() {
 
   if (isInitializing || !activeProject) {
     return (
-      <div className="min-h-screen bg-slate-100 text-slate-800 flex items-center justify-center p-4">
+      <div
+        className={`min-h-screen flex items-center justify-center p-4 transition-colors ${
+          theme === 'dark'
+            ? 'bg-slate-950 text-slate-100'
+            : theme === 'sunlight'
+            ? 'bg-amber-100 text-slate-950'
+            : 'bg-slate-100 text-slate-800'
+        }`}
+      >
         <div className="text-center space-y-3">
           <span className="text-4xl block animate-bounce">📐</span>
-          <h2 className="text-base font-black text-slate-900">Loading RoadLevel Survey Book...</h2>
+          <h2 className="text-base font-black">Loading RoadLevel Survey Book...</h2>
           <p className="text-xs text-slate-500">Preparing offline database</p>
         </div>
       </div>
@@ -228,7 +247,11 @@ export function App() {
   return (
     <div
       className={`min-h-screen pb-20 md:pb-6 transition-colors duration-200 ${
-        sunlightMode ? 'bg-amber-100 text-slate-950 font-medium' : 'bg-slate-100 text-slate-900'
+        theme === 'dark'
+          ? 'bg-slate-950 text-slate-100'
+          : theme === 'sunlight'
+          ? 'bg-amber-100 text-slate-950 font-medium'
+          : 'bg-slate-100 text-slate-900'
       }`}
     >
       {/* Top Navbar */}
@@ -239,9 +262,10 @@ export function App() {
         projects={projects}
         onSelectProject={(id) => setActiveProjectId(id)}
         onNewProject={() => setShowNewProjectModal(true)}
-        sunlightMode={sunlightMode}
-        setSunlightMode={setSunlightMode}
+        theme={theme}
+        setTheme={setTheme}
         onQuickExportExcel={handleQuickExportExcel}
+        onOpenFieldGuide={() => setShowFieldGuideModal(true)}
       />
 
       {/* Main Container */}
@@ -254,7 +278,8 @@ export function App() {
             arithmeticCheck={arithmeticCheck}
             onSaveObservations={handleSaveObservations}
             onExportExcel={handleQuickExportExcel}
-            sunlightMode={sunlightMode}
+            theme={theme}
+            onOpenFieldGuide={() => setShowFieldGuideModal(true)}
           />
         )}
 
@@ -265,7 +290,7 @@ export function App() {
             pegRecords={pegRecords}
             onAddPegRecord={handleAddPegRecord}
             onDeletePegRecord={handleDeletePegRecord}
-            sunlightMode={sunlightMode}
+            theme={theme}
           />
         )}
 
@@ -276,7 +301,7 @@ export function App() {
             dippingRecords={dippingRecords}
             onAddDippingRecord={handleAddDippingRecord}
             onDeleteDippingRecord={handleDeleteDippingRecord}
-            sunlightMode={sunlightMode}
+            theme={theme}
           />
         )}
 
@@ -293,13 +318,20 @@ export function App() {
             auditLogs={auditLogs}
             arithmeticCheck={arithmeticCheck}
             onRestoreBackup={handleRestoreBackup}
-            sunlightMode={sunlightMode}
+            theme={theme}
           />
         )}
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <MobileBottomNav currentTab={currentTab} setCurrentTab={setCurrentTab} />
+      <MobileBottomNav currentTab={currentTab} setCurrentTab={setCurrentTab} theme={theme} />
+
+      {/* Field Guide Modal */}
+      <FieldGuideModal
+        isOpen={showFieldGuideModal}
+        onClose={() => setShowFieldGuideModal(false)}
+        theme={theme}
+      />
 
       {/* New Project Modal */}
       <NewProjectModal
