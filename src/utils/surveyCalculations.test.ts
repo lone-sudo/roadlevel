@@ -395,5 +395,116 @@ describe('RoadLevel Survey Calculations', () => {
       const formatted = formatIntegerMm(1830.009);
       expect(formatted).toBe('1,830,009');
     });
+
+    it('accurately reproduces the user field-book single-line Change Point (CP) from actual site notes', () => {
+      // From user handwritten notebook (Image 1):
+      // Initial Setup: Known RL = 1842.059, BS = 1.155 m -> Col = 1843.214 m
+      // Row 1: Station 0+140, IS = 1.484 m -> Red = 1843.214 - 1.484 = 1841.730 m
+      // CP Row: FS = 1.700 m (reduces CP to 1843.214 - 1.700 = 1841.514 m)
+      // On same line: BS = 0.901 m -> new Col = 1841.514 + 0.901 = 1842.415 m!
+      const setups: InstrumentSetup[] = [
+        {
+          id: 'setup-1',
+          projectId: 'p1',
+          setupNumber: 1,
+          instrumentName: 'Dumpy',
+          backSightPointId: 'BM-1KR02',
+          backSightReadingM: 1.155,
+          heightOfInstrumentM: null,
+          isClosed: false,
+          notes: '',
+          createdAt: '',
+        },
+      ];
+
+      const obs: FieldBookObservation[] = [
+        {
+          id: 'row-1',
+          projectId: 'p1',
+          setupId: 'setup-1',
+          setupNumber: 1,
+          pointId: 'BM-1KR02',
+          pointType: 'BM',
+          chainage: '0+140',
+          chainageMeters: null,
+          position: 'CL',
+          offsetMeters: 0,
+          backsightM: 1.155,
+          intermediateSightM: null,
+          foresightM: null,
+          knownRLM: 1842.059,
+          calculatedRL_HI: null,
+          riseM: null,
+          fallM: null,
+          calculatedRL_RF: null,
+          designRLM: null,
+          remarks: 'Road Beacon 1KR02',
+          source: 'manual',
+          isReviewed: true,
+          createdAt: '',
+          updatedAt: '',
+        },
+        {
+          id: 'row-2',
+          projectId: 'p1',
+          setupId: 'setup-1',
+          setupNumber: 1,
+          pointId: '0+140 -4.2',
+          pointType: 'GROUND',
+          chainage: '0+140',
+          chainageMeters: null,
+          position: 'L',
+          offsetMeters: -4.2,
+          backsightM: null,
+          intermediateSightM: 1.484,
+          foresightM: null,
+          knownRLM: null,
+          calculatedRL_HI: null,
+          riseM: null,
+          fallM: null,
+          calculatedRL_RF: null,
+          designRLM: 1842.059,
+          remarks: '',
+          source: 'manual',
+          isReviewed: true,
+          createdAt: '',
+          updatedAt: '',
+        },
+        {
+          id: 'row-3-cp',
+          projectId: 'p1',
+          setupId: 'setup-1',
+          setupNumber: 1,
+          pointId: 'CP-1',
+          pointType: 'CP',
+          chainage: '0+180',
+          chainageMeters: null,
+          position: 'CL',
+          offsetMeters: 0,
+          backsightM: 0.901,
+          intermediateSightM: null,
+          foresightM: 1.700,
+          knownRLM: null,
+          calculatedRL_HI: null,
+          riseM: null,
+          fallM: null,
+          calculatedRL_RF: null,
+          designRLM: null,
+          remarks: 'Change Point',
+          source: 'manual',
+          isReviewed: true,
+          createdAt: '',
+          updatedAt: '',
+        },
+      ];
+
+      const { calculatedObservations } = recalculateFieldBook(setups, obs);
+      // Row 1: BM RL = 1842.059
+      expect(calculatedObservations[0].calculatedRL_HI).toBe(1842.059);
+      // Row 2: Red = 1841.730
+      expect(calculatedObservations[1].calculatedRL_HI).toBe(1841.73);
+      // Row 3: CP RL = 1841.514
+      expect(calculatedObservations[2].calculatedRL_HI).toBe(1841.514);
+    });
   });
 });

@@ -257,8 +257,30 @@ export function reduceSurveyLevelBook(observations: FieldBookObservation[]): {
       if (obs.pointId) pointRLMap.set(obs.pointId.trim().toUpperCase(), obs.knownRLM);
     }
 
-    // 2. Backsight handling (establishes or transfers HI)
-    if (hasBS) {
+    // 2. Change Point on a single line (has both Foresight and Backsight)
+    if (hasFS && hasBS) {
+      let refRL = obs.knownRLM ?? null;
+      if (currentHI !== null && obs.foresightM !== null) {
+        refRL = calculateRL_HI(currentHI, obs.foresightM);
+      } else if (refRL === null && obs.pointId) {
+        refRL = pointRLMap.get(obs.pointId.trim().toUpperCase()) ?? null;
+      }
+
+      if (refRL !== null && obs.backsightM !== null) {
+        currentHI = calculateHI(refRL, obs.backsightM);
+        obs.calculatedRL_HI = refRL;
+        obs.calculatedRL_RF = refRL;
+        previousRL = refRL;
+        if (obs.pointId) pointRLMap.set(obs.pointId.trim().toUpperCase(), refRL);
+      }
+
+      previousSight = obs.backsightM;
+      obs.riseM = null;
+      obs.fallM = null;
+    }
+
+    // 3. Backsight handling (establishes or transfers HI)
+    else if (hasBS) {
       // Determine the reference RL for this backsight:
       // A) explicit known RL on this row
       // B) previous Foresight RL on the same point (Change Point)
