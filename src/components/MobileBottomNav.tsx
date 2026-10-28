@@ -1,33 +1,25 @@
 import React from 'react';
-import {
-  FileSpreadsheet,
-  Calculator,
-  Layers,
-  Ruler,
-  Menu,
-} from 'lucide-react';
+import { BookOpen, Layers, Ruler, FileSpreadsheet } from 'lucide-react';
 
 interface MobileBottomNavProps {
   currentTab: string;
   setCurrentTab: (tab: string) => void;
-  onOpenMoreMenu: () => void;
 }
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   currentTab,
   setCurrentTab,
-  onOpenMoreMenu,
 }) => {
   const navItems = [
-    { id: 'fieldbook', label: 'Field Book', icon: FileSpreadsheet },
-    { id: 'rlcalc', label: 'RL Calc', icon: Calculator },
-    { id: 'pegs', label: 'Pegs', icon: Layers },
+    { id: 'fieldbook', label: 'Survey Book', icon: BookOpen },
+    { id: 'pegs', label: 'Peg Marks', icon: Layers },
     { id: 'dipping', label: 'Dipping', icon: Ruler },
+    { id: 'reports', label: 'Reports', icon: FileSpreadsheet },
   ];
 
   return (
-    <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 text-slate-300 shadow-2xl safe-area-bottom">
-      <div className="grid grid-cols-5 h-16">
+    <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 text-slate-600 shadow-xl safe-area-bottom">
+      <div className="grid grid-cols-4 h-16">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentTab === item.id;
@@ -36,12 +28,12 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
               key={item.id}
               onClick={() => setCurrentTab(item.id)}
               className={`flex flex-col items-center justify-center gap-1 transition touch-manipulation ${
-                isActive ? 'text-amber-400 font-extrabold' : 'text-slate-400 hover:text-slate-200'
+                isActive ? 'text-amber-600 font-black' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               <div
                 className={`p-1 rounded-xl transition ${
-                  isActive ? 'bg-amber-500/20 text-amber-400' : ''
+                  isActive ? 'bg-amber-100 text-amber-700' : ''
                 }`}
               >
                 <Icon className="w-5 h-5" />
@@ -50,17 +42,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             </button>
           );
         })}
-
-        {/* More menu drawer trigger */}
-        <button
-          onClick={onOpenMoreMenu}
-          className="flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-slate-200 touch-manipulation"
-        >
-          <div className="p-1 rounded-xl">
-            <Menu className="w-5 h-5" />
-          </div>
-          <span className="text-[10px] tracking-tight">More</span>
-        </button>
       </div>
     </div>
   );

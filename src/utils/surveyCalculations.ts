@@ -2,7 +2,6 @@
 
 import {
   ArithmeticCheckResult,
-  CrossSectionPosition,
   FieldBookObservation,
   InstrumentSetup,
 } from '../types/survey';
@@ -11,7 +10,7 @@ import {
  * Format a number to 3 decimal places (standard levelling precision in metres).
  */
 export function formatMeters(value: number | null | undefined): string {
-  if (value === null || value === undefined || isNaN(value)) return '-';
+  if (value === null || value === undefined || isNaN(value)) return '';
   return value.toFixed(3);
 }
 
@@ -20,7 +19,7 @@ export function formatMeters(value: number | null | undefined): string {
  * e.g. 1830.009 m -> "1,830,009 mm" (or "1830009")
  */
 export function formatIntegerMm(metersValue: number | null | undefined, withCommas = true): string {
-  if (metersValue === null || metersValue === undefined || isNaN(metersValue)) return '-';
+  if (metersValue === null || metersValue === undefined || isNaN(metersValue)) return '';
   const mm = Math.round(metersValue * 1000);
   if (withCommas) {
     return mm.toLocaleString('en-US');
@@ -41,7 +40,6 @@ export function parseLevelToMeters(input: string | number, isIntegerMmMode: bool
   if (isNaN(num)) return null;
 
   if (isIntegerMmMode) {
-    // If the input already contains a decimal point, assume user explicitly entered metres
     if (clean.includes('.')) {
       return num;
     }
@@ -70,11 +68,10 @@ export function parseChainageToMeters(chainageStr: string | null): number | null
  * Format metres to standard Chainage string, e.g. 20 -> "0+020", 1250 -> "1+250".
  */
 export function formatChainage(meters: number | null): string {
-  if (meters === null || meters === undefined || isNaN(meters)) return '-';
+  if (meters === null || meters === undefined || isNaN(meters)) return '';
   const km = Math.floor(meters / 1000);
   const rem = meters % 1000;
   const remStr = rem < 10 ? `00${rem.toFixed(1)}` : rem < 100 ? `0${rem.toFixed(1)}` : rem.toFixed(1);
-  // remove trailing .0 if integer
   const cleanRem = remStr.endsWith('.0') ? remStr.slice(0, -2) : remStr;
   return `${km}+${cleanRem.padStart(3, '0')}`;
 }
@@ -116,7 +113,6 @@ export function calculatePegSettingOut(
 } {
   const allowanceM = allowanceMm / 1000;
   const adjustedDesignRLM = Number((centreDesignRLM + allowanceM).toFixed(4));
-  // Exact millimetre offset
   const offsetMm = Math.round((adjustedDesignRLM - pegRLM) * 1000);
 
   let direction: 'UPWARD' | 'DOWNWARD' | 'LEVEL';
@@ -224,12 +220,168 @@ export function verifyRoadBeacon(
 }
 
 /**
- * Recalculate an entire field book:
- * - Computes Height of Instrument (HI) for each setup
- * - Computes RL via HI method
- * - Computes Rise and Fall between consecutive staff readings
- * - Computes RL via Rise and Fall method
- * - Checks connection across setups via Change Points (CP) or known reference points
+ * Natural Survey Book Sequential Reducer:
+ * Processes rows sequentially exactly as recorded in a civil surveying level book:
+ * - Backsight (BS) on known point establishes or updates HI = RL + BS.
+ * - Intermediate Sight (IS) reduces RL = HI - IS, computes Rise/Fall from previous sight.
+ * - Foresight (FS) on Change Point reduces RL = HI - FS, computes Rise/Fall from previous sight.
+ * - Change Point (CP) transition: next BS uses the CP's calculated RL to establish the new HI.
+ */
+export function reduceSurveyLevelBook(observations: FieldBookObservation[]): {
+  calculatedObservations: FieldBookObservation[];
+  arithmeticCheck: ArithmeticCheckResult;
+} {
+  const calculatedObservations: FieldBookObservation[] = [];
+
+  let currentHI: number | null = null;
+  let previousSight: number | null = null;
+  let previousRL: number | null = null;
+
+  // Map to remember point RLs (e.g. for BM, TBM, CP)
+  const pointRLMap = new Map<string, number>();
+
+  for (let i = 0; i < observations.length; i++) {
+    const raw = observations[i];
+    const obs: FieldBookObservation = { ...raw };
+
+    const hasBS = obs.backsightM !== null && !isNaN(obs.backsightM);
+    const hasIS = obs.intermediateSightM !== null && !isNaN(obs.intermediateSightM);
+    const hasFS = obs.foresightM !== null && !isNaN(obs.foresightM);
+    const hasKnownRL = obs.knownRLM !== null && !isNaN(obs.knownRLM);
+
+    // 1. If row has explicit known RL (e.g. initial Benchmark)
+    if (hasKnownRL && obs.knownRLM !== null) {
+      obs.calculatedRL_HI = obs.knownRLM;
+      obs.calculatedRL_RF = obs.knownRLM;
+      previousRL = obs.knownRLM;
+      if (obs.pointId) pointRLMap.set(obs.pointId.trim().toUpperCase(), obs.knownRLM);
+    }
+
+    // 2. Backsight handling (establishes or transfers HI)
+    if (hasBS) {
+      // Determine the reference RL for this backsight:
+      // A) explicit known RL on this row
+      // B) previous Foresight RL on the same point (Change Point)
+      // C) previous point RL from memory map
+      let refRL = obs.knownRLM ?? null;
+
+      if (refRL === null && obs.pointId) {
+        refRL = pointRLMap.get(obs.pointId.trim().toUpperCase()) ?? null;
+      }
+      if (refRL === null && previousRL !== null) {
+        refRL = previousRL;
+      }
+
+      if (refRL !== null) {
+        currentHI = calculateHI(refRL, obs.backsightM!);
+        obs.calculatedRL_HI = refRL;
+        obs.calculatedRL_RF = refRL;
+        previousRL = refRL;
+        if (obs.pointId) pointRLMap.set(obs.pointId.trim().toUpperCase(), refRL);
+      }
+
+      // In Rise & Fall, backsight resets the comparative sight
+      previousSight = obs.backsightM;
+      obs.riseM = null;
+      obs.fallM = null;
+    }
+
+    // 3. Intermediate Sight (IS) handling
+    else if (hasIS) {
+      const isReading = obs.intermediateSightM!;
+
+      // HI reduction
+      if (currentHI !== null) {
+        obs.calculatedRL_HI = calculateRL_HI(currentHI, isReading);
+      } else {
+        obs.calculatedRL_HI = null;
+      }
+
+      // Rise and Fall reduction
+      if (previousSight !== null && previousRL !== null) {
+        const diff = Number((previousSight - isReading).toFixed(4));
+        if (diff > 0) {
+          obs.riseM = diff;
+          obs.fallM = 0;
+          obs.calculatedRL_RF = Number((previousRL + diff).toFixed(4));
+        } else if (diff < 0) {
+          obs.riseM = 0;
+          obs.fallM = Math.abs(diff);
+          obs.calculatedRL_RF = Number((previousRL - Math.abs(diff)).toFixed(4));
+        } else {
+          obs.riseM = 0;
+          obs.fallM = 0;
+          obs.calculatedRL_RF = previousRL;
+        }
+        previousRL = obs.calculatedRL_RF;
+      } else {
+        obs.riseM = null;
+        obs.fallM = null;
+        obs.calculatedRL_RF = obs.calculatedRL_HI;
+        previousRL = obs.calculatedRL_HI;
+      }
+
+      previousSight = isReading;
+      if (obs.pointId && obs.calculatedRL_HI !== null) {
+        pointRLMap.set(obs.pointId.trim().toUpperCase(), obs.calculatedRL_HI);
+      }
+    }
+
+    // 4. Foresight (FS) handling (Closing or Change Point)
+    else if (hasFS) {
+      const fsReading = obs.foresightM!;
+
+      // HI reduction
+      if (currentHI !== null) {
+        obs.calculatedRL_HI = calculateRL_HI(currentHI, fsReading);
+      } else {
+        obs.calculatedRL_HI = null;
+      }
+
+      // Rise and Fall reduction
+      if (previousSight !== null && previousRL !== null) {
+        const diff = Number((previousSight - fsReading).toFixed(4));
+        if (diff > 0) {
+          obs.riseM = diff;
+          obs.fallM = 0;
+          obs.calculatedRL_RF = Number((previousRL + diff).toFixed(4));
+        } else if (diff < 0) {
+          obs.riseM = 0;
+          obs.fallM = Math.abs(diff);
+          obs.calculatedRL_RF = Number((previousRL - Math.abs(diff)).toFixed(4));
+        } else {
+          obs.riseM = 0;
+          obs.fallM = 0;
+          obs.calculatedRL_RF = previousRL;
+        }
+        previousRL = obs.calculatedRL_RF;
+      } else {
+        obs.riseM = null;
+        obs.fallM = null;
+        obs.calculatedRL_RF = obs.calculatedRL_HI;
+        previousRL = obs.calculatedRL_HI;
+      }
+
+      // Store RL for Change Point transfer
+      if (obs.calculatedRL_HI !== null) {
+        if (obs.pointId) pointRLMap.set(obs.pointId.trim().toUpperCase(), obs.calculatedRL_HI);
+      }
+
+      previousSight = fsReading;
+    }
+
+    calculatedObservations.push(obs);
+  }
+
+  const arithmeticCheck = computeArithmeticChecks(calculatedObservations);
+  return {
+    calculatedObservations,
+    arithmeticCheck,
+  };
+}
+
+/**
+ * Standard Multi-Setup Field Book Recalculator
  */
 export function recalculateFieldBook(
   setups: InstrumentSetup[],
@@ -239,153 +391,20 @@ export function recalculateFieldBook(
   arithmeticCheck: ArithmeticCheckResult;
   warnings: string[];
 } {
+  const result = reduceSurveyLevelBook(observations);
   const warnings: string[] = [];
-  const calculatedObservations: FieldBookObservation[] = [];
 
-  // Group observations by setup
-  const setupMap = new Map<string, InstrumentSetup>();
-  setups.forEach((s) => setupMap.set(s.id, s));
-
-  // Sort observations by setupNumber and entry order
-  const sortedObs = [...observations].sort((a, b) => {
-    if (a.setupNumber !== b.setupNumber) {
-      return a.setupNumber - b.setupNumber;
+  // Check if first row has known benchmark
+  if (observations.length > 0) {
+    const first = observations[0];
+    if (first.backsightM !== null && first.knownRLM === null) {
+      warnings.push("Line #1 has Backsight but no Known Benchmark RL. Set Known RL to calculate absolute elevations.");
     }
-    return a.id.localeCompare(b.id);
-  });
-
-  // Track RLs of points to allow setups to backsight onto them (e.g. BM or CP)
-  const knownPointRLs = new Map<string, number>();
-
-  // Pre-seed known points from observations that have explicit knownRL
-  sortedObs.forEach((obs) => {
-    if (obs.knownRLM !== null && !isNaN(obs.knownRLM)) {
-      knownPointRLs.set(obs.pointId, obs.knownRLM);
-    }
-  });
-
-  // Track instrument HI per setup
-  const setupHIs = new Map<string, number>();
-
-  // First pass: Calculate HIs for setups
-  setups.forEach((setup) => {
-    let bsPointRL: number | null = null;
-    if (knownPointRLs.has(setup.backSightPointId)) {
-      bsPointRL = knownPointRLs.get(setup.backSightPointId)!;
-    }
-
-    if (bsPointRL !== null && setup.backSightReadingM !== null) {
-      const hi = calculateHI(bsPointRL, setup.backSightReadingM);
-      setupHIs.set(setup.id, hi);
-    } else {
-      warnings.push(
-        `Setup #${setup.setupNumber}: Missing known RL for Backsight Point '${setup.backSightPointId}'. Cannot calculate Height of Instrument.`
-      );
-    }
-  });
-
-  // Pass 2: Calculate HI RLs for each observation
-  let previousStaffReading: number | null = null;
-  let previousRL_RF: number | null = null;
-
-  for (let i = 0; i < sortedObs.length; i++) {
-    const obs = { ...sortedObs[i] };
-    const setup = setupMap.get(obs.setupId);
-    const hi = setupHIs.get(obs.setupId) ?? null;
-
-    // Determine current staff reading
-    // In levelling:
-    // BS is taken on a known point (BM or CP)
-    // IS is intermediate
-    // FS is foresight on CP or closing BM
-    let currentStaffReading: number | null = null;
-    if (obs.backsightM !== null) currentStaffReading = obs.backsightM;
-    else if (obs.intermediateSightM !== null) currentStaffReading = obs.intermediateSightM;
-    else if (obs.foresightM !== null) currentStaffReading = obs.foresightM;
-
-    // HI Method RL
-    if (obs.knownRLM !== null) {
-      obs.calculatedRL_HI = obs.knownRLM;
-    } else if (hi !== null) {
-      if (obs.intermediateSightM !== null) {
-        obs.calculatedRL_HI = calculateRL_HI(hi, obs.intermediateSightM);
-      } else if (obs.foresightM !== null) {
-        obs.calculatedRL_HI = calculateRL_HI(hi, obs.foresightM);
-        // If this point is a Change Point, register its RL for subsequent setups!
-        if (obs.pointType === 'CP' || obs.pointType === 'TBM' || obs.pointType === 'BM') {
-          knownPointRLs.set(obs.pointId, obs.calculatedRL_HI);
-          // If subsequent setups are backsighting on this point, calculate their HI
-          setups.forEach((subSetup) => {
-            if (subSetup.backSightPointId === obs.pointId && !setupHIs.has(subSetup.id)) {
-              const newHI = calculateHI(obs.calculatedRL_HI!, subSetup.backSightReadingM);
-              setupHIs.set(subSetup.id, newHI);
-            }
-          });
-        }
-      } else if (obs.backsightM !== null && obs.knownRLM === null) {
-        // A backsight point with no known RL
-        obs.calculatedRL_HI = null;
-      }
-    } else {
-      obs.calculatedRL_HI = null;
-    }
-
-    // Rise & Fall Method calculation
-    if (i === 0) {
-      obs.riseM = null;
-      obs.fallM = null;
-      obs.calculatedRL_RF = obs.knownRLM ?? obs.calculatedRL_HI;
-      previousRL_RF = obs.calculatedRL_RF;
-      previousStaffReading = currentStaffReading;
-    } else {
-      // Check if current observation is a backsight on a new setup
-      const isNewSetupBacksight = obs.backsightM !== null && sortedObs[i - 1].setupId !== obs.setupId;
-
-      if (isNewSetupBacksight) {
-        // Change point transition: BS is on the same physical point where previous FS was taken
-        obs.riseM = null;
-        obs.fallM = null;
-        // RL remains the CP level
-        obs.calculatedRL_RF = knownPointRLs.get(obs.pointId) ?? previousRL_RF;
-        previousRL_RF = obs.calculatedRL_RF;
-        previousStaffReading = obs.backsightM;
-      } else if (currentStaffReading !== null && previousStaffReading !== null) {
-        // Standard Rise & Fall rule: Previous Reading - Current Reading
-        const diff = Number((previousStaffReading - currentStaffReading).toFixed(4));
-        if (diff > 0) {
-          obs.riseM = diff;
-          obs.fallM = 0;
-          obs.calculatedRL_RF = previousRL_RF !== null ? Number((previousRL_RF + diff).toFixed(4)) : null;
-        } else if (diff < 0) {
-          obs.riseM = 0;
-          obs.fallM = Math.abs(diff);
-          obs.calculatedRL_RF = previousRL_RF !== null ? Number((previousRL_RF - Math.abs(diff)).toFixed(4)) : null;
-        } else {
-          obs.riseM = 0;
-          obs.fallM = 0;
-          obs.calculatedRL_RF = previousRL_RF;
-        }
-        previousRL_RF = obs.calculatedRL_RF;
-        previousStaffReading = currentStaffReading;
-      } else {
-        obs.riseM = null;
-        obs.fallM = null;
-        obs.calculatedRL_RF = obs.calculatedRL_HI;
-        if (currentStaffReading !== null) {
-          previousStaffReading = currentStaffReading;
-        }
-      }
-    }
-
-    calculatedObservations.push(obs);
   }
 
-  // Arithmetic Checks
-  const arithmeticCheck = computeArithmeticChecks(calculatedObservations);
-
   return {
-    calculatedObservations,
-    arithmeticCheck,
+    calculatedObservations: result.calculatedObservations,
+    arithmeticCheck: result.arithmeticCheck,
     warnings,
   };
 }
@@ -440,7 +459,6 @@ export function computeArithmeticChecks(observations: FieldBookObservation[]): A
   const diffRise_Fall = Number((sumRise - sumFall).toFixed(4));
   const diffRL = firstRL !== null && lastRL !== null ? Number((lastRL - firstRL).toFixed(4)) : null;
 
-  // Check completeness
   if (!hasBS || !hasFS || diffRL === null) {
     return {
       sumBS,
@@ -454,19 +472,18 @@ export function computeArithmeticChecks(observations: FieldBookObservation[]): A
       diffRise_Fall,
       isComplete: false,
       isPassed: false,
-      statusMessage: 'Incomplete: Need both Backsight(s), Foresight(s), and valid Reduced Levels',
+      statusMessage: 'Incomplete: Need both Backsight(s) and Foresight(s) to verify closure',
       details: 'Arithmetic check requires at least one Backsight, one Foresight, and calculated First and Last RLs.',
     };
   }
 
-  // Tolerance for arithmetic equality: 0.001 m (1 mm)
-  const bsFsMatch = Math.abs(diffBS_FS - diffRL) <= 0.001;
-  const rfMatch = Math.abs(diffRise_Fall - diffRL) <= 0.001;
+  const bsFsMatch = Math.abs(diffBS_FS - diffRL) <= 0.0015;
+  const rfMatch = Math.abs(diffRise_Fall - diffRL) <= 0.0015;
   const isPassed = bsFsMatch && (sumRise === 0 && sumFall === 0 ? true : rfMatch);
 
   const statusMessage = isPassed
-    ? 'Arithmetic Check Passed (ΣBS - ΣFS = Last RL - First RL)'
-    : `Arithmetic Check Failed: ΣBS - ΣFS (${diffBS_FS.toFixed(3)} m) ≠ Last RL - First RL (${diffRL.toFixed(3)} m)`;
+    ? 'Arithmetic Check: PASSED (ΣBS − ΣFS = ΔRL)'
+    : `Arithmetic Discrepancy: ΣBS − ΣFS (${diffBS_FS.toFixed(3)} m) ≠ ΔRL (${diffRL.toFixed(3)} m)`;
 
   const details = `ΣBS: ${sumBS.toFixed(3)} m | ΣFS: ${sumFS.toFixed(3)} m | Difference: ${diffBS_FS.toFixed(3)} m\n` +
     `First RL: ${firstRL?.toFixed(3)} m | Last RL: ${lastRL?.toFixed(3)} m | RL Difference: ${diffRL.toFixed(3)} m\n` +
@@ -490,11 +507,7 @@ export function computeArithmeticChecks(observations: FieldBookObservation[]): A
 }
 
 /**
- * Compare Ground RL vs Design RL (Section 8.3):
- * Difference = Existing Ground RL - Design RL
- * Positive: Ground is above design -> Cut
- * Negative: Ground is below design -> Fill
- * Zero: On design
+ * Compare Ground RL vs Design RL (Section 8.3)
  */
 export function compareGroundVsDesign(
   groundRLM: number,
