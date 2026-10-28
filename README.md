@@ -1,86 +1,122 @@
-# RoadLevel
+# RoadLevel 🚧📐
+### Offline-First Road Surveying, Levelling, Dipping & Peg-Setting Application
 
-Offline-first road surveying assistant for an Android phone or any laptop browser:
-a digital field book, reduced-level calculations across instrument setups, peg
-setting-out with a configurable allowance, and thread-to-ground dipping corrections.
+**RoadLevel** is a field-hardened, offline-first digital assistant designed specifically for road construction site personnel, survey assistants, site engineers, and technicians. Built around testable surveying principles, it replaces error-prone manual calculations and paper record-keeping with transparent, verifiable digital workflows.
 
-Built as an installable PWA (React + TypeScript + Vite). All data is stored
-locally in IndexedDB. Core calculations never touch the network.
+---
 
-**This is a calculation and record-keeping assistant. It does not replace
-approved drawings, survey specifications, independent checks or engineering
-judgement.**
+## 🎯 Key Capabilities & Verified Surveying Mathematics
 
-## Try it / run it
+### 1. Differential Levelling (Digital Field Book & RL Calculator)
+* **Height of Instrument (HI / HOC):**
+  $$\text{HI} = \text{Known RL} + \text{Backsight (BS)}$$
+  $$\text{RL} = \text{HI} - \text{Staff Reading (IS or FS)}$$
+* **Rise & Fall Method:**
+  $$\text{Difference} = \text{Previous Reading} - \text{Current Reading}$$
+  $$\text{If } \text{Diff} > 0 \rightarrow \text{Rise}; \quad \text{If } \text{Diff} < 0 \rightarrow \text{Fall}$$
+  $$\text{RL} = \text{Previous RL} + \text{Rise} - \text{Fall}$$
+* **Standard Arithmetic Check (Section 6.3):**
+  $$\sum \text{BS} - \sum \text{FS} = \text{Last RL} - \text{First RL} = \sum \text{Rise} - \sum \text{Fall}$$
+  * Live status indicator: `PASSED`, `INCOMPLETE`, or `FAILED`.
+  * Distinctly separates arithmetic verification from independent closure on a known reference benchmark.
+* **Multi-Setup Instrument Management:** Seamless change-point (CP) tracking across setups with connection warnings for missing links.
 
-- Hosted: **https://site-30e05577ceae43fc916eee53071b8823.freebuff.page** — open this in Chrome on your Android phone
-- Local:
+### 2. Peg Setting-Out & Peg-Marking Calculator (Section 9)
+* **Adjusted Design Level:**
+  $$\text{Adjusted Design Level} = \text{Centre Design RL} + \text{Configured Allowance}$$
+  *(Default allowance: +300 mm, user configurable in Project Settings)*
+* **Signed Peg-Marking Offset:**
+  $$\text{Offset} = \text{Adjusted Design Level} - \text{Peg RL}$$
+* **Direction Convention (Section 9.3):**
+  * **Positive ($> 0$):** Measured and marked **UPWARD** from the top of the peg.
+  * **Negative ($< 0$):** Measured and marked **DOWNWARD** from the top of the peg.
+  * **Zero ($= 0$):** On level.
+* **Worked Example (Section 9.2):**
+  | Item | Value |
+  |---|---|
+  | Centre Design RL | 1,829,764 mm |
+  | Allowance | +300 mm |
+  | **Adjusted Design Level** | **1,830,064 mm** |
+  | Left Peg RL | 1,830,009 mm $\rightarrow$ **+55 mm upward** |
+  | Right Peg RL | 1,830,045 mm $\rightarrow$ **+19 mm upward** |
+* Includes a graphical **Visual Peg Marking Diagram** with offset arrows.
 
+### 3. Dipping & Thread-to-Ground Correction (Section 10)
+* **Formula:**
+  $$\text{Correction} = \text{Actual Measurement} - \text{Target Measurement}$$
+  * **Actual > Target (+):** Reported as **FILL** (e.g. Target 38 cm, Actual 42 cm $\rightarrow$ **Fill 4 cm / 40 mm**).
+  * **Actual < Target (-):** Reported as **CUT** (e.g. Target 38 cm, Actual 32 cm $\rightarrow$ **Cut 6 cm / 60 mm**).
+  * **Actual = Target (0):** **No correction required (On target)**.
+* Interactive cross-section diagram showing stretched thread, target grade line, ground profile, and cut/fill arrow.
+
+### 4. Road Beacon & Benchmark Register (Section 7)
+* Compares calculated reduced levels with official known beacon RLs:
+  $$\text{Difference} = \text{Calculated RL} - \text{Known RL}$$
+* **Configurable Survey Tolerance:** Supports project-defined limits (e.g. $\pm 10\text{ mm}$); defaults to `Tolerance Not Configured` until explicitly set by the engineer (Section 7.2).
+
+### 5. On-Device Field Book OCR & Human Review (Section 11)
+* **100% Offline Optical Character Recognition:** Powered by client-side Web Workers (Tesseract.js). Photos never leave the phone.
+* Image pre-processing: canvas rotation (90° increments), contrast enhancement, and grayscaling for faint site handwriting.
+* **Human-in-the-Loop Safety:** Extracted values are marked *Pending Review* with uncertain digits highlighted in amber. Readings must be human-confirmed before being accepted into calculations.
+
+### 6. Reports, Multi-Sheet Excel & Audit Trail (Sections 5.3 & 14)
+* **Multi-Sheet Excel Workbook Export (`.xlsx`):**
+  1. `Project Summary`
+  2. `Field Book`
+  3. `Reduced Levels` (Collimation & Rise/Fall)
+  4. `Design Levels`
+  5. `Peg Setting-Out`
+  6. `Dipping Corrections`
+  7. `Beacon Checks`
+  8. `Audit Log`
+* **Audit Trail:** Preserves full history of any edited observations with previous value, corrected value, timestamp, and reason.
+* **Full JSON Backup & Restore:** Safeguards project databases locally with zero reliance on cloud servers.
+
+---
+
+## 🛠️ Architecture & Offline-First Tech Stack
+
+* **Platform:** Installable Progressive Web App (PWA) with Service Worker precaching (`vite-plugin-pwa`) and Web App Manifest.
+* **Local Database:** Dexie.js (IndexedDB wrapper) with reactive live queries (`useLiveQuery`).
+* **Frontend:** React 19, TypeScript, Tailwind CSS v4, Lucide Icons.
+* **Excel Engine:** SheetJS (`xlsx`) for multi-sheet workbook generation and CSV mapping.
+* **OCR Engine:** Tesseract.js running 100% locally in browser Web Workers.
+* **Test Suite:** Vitest automated tests verifying all mathematical formulas.
+
+---
+
+## 🚀 Running the Project
+
+### Prerequisites
+* Node.js $\ge 18$
+* npm
+
+### Install Dependencies
 ```bash
 npm install
-npm run dev        # http://localhost:5179
-npm test           # 45 calculation/data tests (spec Tests 1–21 + validation)
-npm run build      # production build + service worker in dist/
 ```
 
-Install on Android: open the app URL in Chrome → ⋮ → **Add to Home screen /
-Install app**. The app shell is precached by the service worker; records
-persist in IndexedDB and continue working with no signal.
+### Run Local Development Server
+```bash
+npm run dev
+```
+Open [http://localhost:5173](http://localhost:5173) in Chrome or mobile browser.
 
-## Documentation
+### Run Unit Tests
+```bash
+npx vitest run
+```
 
-- [`docs/SPEC.md`](docs/SPEC.md) — full product requirements, technical specification and development blueprint
-- [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md) — step-by-step user walkthrough (install → project → field book → pegs → dipping → export)
-- [`JOURNAL.md`](JOURNAL.md) — build journal (architecture decisions, test results, known limitations)
+### Production Build
+```bash
+npm run build
+```
+Generates offline-ready service worker and PWA bundle in `dist/`.
 
-## Source layout
+---
 
-- `src/core/units.ts` — integer-millimetre boundary conversions with precision validation
-- `src/core/engine.ts` — the deterministic calculation engine (HI/HOC, Rise & Fall, arithmetic checks, peg marking, dipping, ground-vs-design, beacon)
-- `src/core/*.test.ts` — spec test cases; expected values were fixed before implementation
-- `src/db/store.ts` — IndexedDB schema, versioned project backup/restore
-- `src/db/service.ts` — domain service: sessions, setups, recalculation, design levels, peg marks, dipping, beacon checks, audit events
-- `src/io/csv.ts` — CSV parse/serialize with unit-validated import
-- `src/screens/*` — UI screens (projects, settings, field book, points/beacons, design levels, peg setting-out, dipping, backup/audit)
-
-## What is implemented (Milestones 1–4 core, per spec §35)
-
-- HI/HOC and Rise & Fall reduction across multiple instrument setups, with change-point linkage validation
-- Arithmetic checks (ΣBS−ΣFS and ΣRise−ΣFall), displayed separately from independent verification
-- Project register with per-project settings, audit trail, dashboard summary
-- Design levels: manual entry, validated CSV import with duplicate flagging, design-vs-ground compare that blocks mismatches
-- Peg setting-out with configurable allowance and signed direction convention, exact values always kept, stale-result review after setting changes
-- Dipping corrections using the confirmed D = actual − target rule
-- Beacon verification with the difference always shown and tolerance status "not configured" unless a tolerance is explicitly set
-- Versioned JSON backup export/restore with pre-restore validation and never-silent-overwrite naming
-- Service-worker-cached offline app shell
-
-## Deferrals (tracked in the build journal)
-
-- Excel workbook import/export (spec Milestone 4, second half) — CSV only for now
-- Field-book photograph capture and OCR extraction (Milestone 6) — the schema
-  keeps `fieldBookImages` and `extractionRecords` stores so backups stay forward-compatible
-- Crossfall target derivation — intentionally deferred until the geometric convention is confirmed (spec §13, §37.2)
-- Native Android app — PWA first; reassess only if the PWA fails a documented requirement (spec §37.6)
-
-## Deployment
-
-The production PWA build is deployed to a public HTTPS URL (`dist/` is served
-by a Workers asset handler — see [`deploy/worker.js`](deploy/worker.js) and
-[`manifest.json`](manifest.json)) so it can be installed on an Android phone
-directly from Chrome. Currently served at:
-
-**https://site-30e05577ceae43fc916eee53071b8823.freebuff.page**
-
-## Governing rule
-
-RoadLevel may automate arithmetic, validation and record-keeping, but it must
-never silently invent an observation, hide a failed check or turn an unconfirmed
-site convention into an authoritative surveying rule.
-
-## Known limitations (before field use)
-
-- Browser storage can be cleared by the user or OS; no other automatic protection exists. Export backups regularly (Backup tab → Export project backup).
-- Arithmetic checks are arithmetic only; independent benchmark closure is not yet automated beyond beacon differences.
-- Offline behaviour and IndexedDB persistence must be validated on the intended Android phone (spec Test 30/31) before relying on it in the field.
-- Scanned field-book support is not implemented in this build.
+## 📱 Mobile Installation (Android / iOS)
+1. Open RoadLevel in Chrome on Android (or Safari on iOS).
+2. Tap the browser menu ($\vdots$ or Share).
+3. Select **"Add to Home Screen"** or **"Install Application"**.
+4. RoadLevel will install as a standalone full-screen application and continue working seamlessly even in airplane mode with zero mobile reception.
